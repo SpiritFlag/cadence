@@ -32,3 +32,15 @@ GitHub는 이슈 목록의 원본이고, 이슈 사이의 의존 관계(무엇�
 
 - **이슈 본문의 `blocked by #n` 관습 파싱** — GitHub 웹에서도 보인다는 장점이 있지만, 파싱 규칙이 곧 스펙이 되고 오타 하나에 끊긴다.
 - **GitHub 네이티브 의존성(Blocked by)** — `gh issue view --json`이 내주지 않아 GraphQL을 따로 쳐야 하고, 플랜 제약이 있을 수 있다.
+
+## GitHub에 쓰는 것은 우선순위 라벨뿐이다
+
+동기화는 GitHub → cadence가 기본이다. cadence가 GitHub에 쓰는 것은 `p1` `p2` `p3` `hold` 라벨의 변경뿐이다. 본문 · 제목 · 상태 · 코멘트는 쓰지 않는다.
+
+- 우선순위는 cycle 체계가 GitHub 라벨로 읽는다. cadence가 조율한 결과가 라벨로 남아야 `/cycle:start`와 한 몸이 된다.
+- 쓰기 범위가 라벨 넷으로 닫혀 있어 잘못 써도 피해가 작고 되돌리기 쉽다.
+- 쓰기 명령은 `gh issue edit --add-label` · `--remove-label`뿐이다.
+
+### 버린 길
+
+- **읽기 전용** — 가장 단순하지만, cadence 화면의 우선순위와 GitHub 라벨이 따로 놀아 사용자가 손으로 옮겨야 한다.
