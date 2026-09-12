@@ -8,13 +8,15 @@
 ```
 bun install
 ```
-`gh`가 로그인돼 있어야 한다.
+`gh`와 `claude`(Claude Code CLI)가 로그인돼 있어야 한다.
 
 ## 사용
 ```
 bun run start
 ```
-브라우저에서 `localhost:4747`을 연다. 상단 입력칸에 `owner/name`을 넣고 추가하면 그 레포의 열린 이슈가 그래프에 카드로 보인다. 카드를 누르면 아래에 본문과 "막는 이슈"가 보인다. 카드 아래 점을 끌어 다른 카드 위 점에 놓으면 "막는다" 선이 생긴다. 서로 막는 선은 빨갛다. 새로고침은 다시 가져온다.
+브라우저에서 `localhost:4747`을 연다. 상단 입력칸에 `owner/name`을 넣고 추가하면 그 레포의 열린 이슈가 그래프에 카드로 보인다. 카드 아래 점을 끌어 다른 카드 위 점에 놓으면 "막는다" 선이 생긴다. 서로 막는 선은 빨갛다.
+
+[제안]을 누르면 claude가 이슈를 같이 할 묶음으로 나누어 순위를 매기고, 올릴 라벨을 제안한다. 체크를 남긴 것만 [승인한 라벨 변경 반영]으로 GitHub 라벨이 바뀐다. cadence가 GitHub에 쓰는 것은 `p1` `p2` `p3` `hold` 라벨뿐이다.
 
 개발은 `bun run dev`. 검증은 `bun test` · `bun run check`.
 
@@ -29,10 +31,13 @@ bun run start
 │   └── SPEC.md
 ├── scripts/
 ├── server/
+│   ├── apply/
 │   ├── db/
 │   ├── deps/
 │   ├── github/
 │   ├── graph/
+│   ├── llm/
+│   ├── propose/
 │   └── sync/
 ├── web/
 │   └── src/
