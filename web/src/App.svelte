@@ -2,16 +2,16 @@
   import { onMount } from "svelte";
   import { load } from "./lib/store.svelte";
   import Header from "./components/Header.svelte";
-  import IssueList from "./components/IssueList.svelte";
+  import Graph from "./components/Graph.svelte";
   import IssueDetail from "./components/IssueDetail.svelte";
 
-  // 화면은 하나다: 좌(지금은 목록, 나중에 그래프) · 우(패키지 자리) · 하(상세).
+  // 화면은 하나다: 좌(그래프) · 우(패키지 자리) · 하(상세).
   onMount(load);
 </script>
 
 <div class="layout">
   <div class="header"><Header /></div>
-  <main class="left"><IssueList /></main>
+  <main class="left"><Graph /></main>
   <aside class="right"><p class="placeholder">패키지</p></aside>
   <section class="bottom"><IssueDetail /></section>
 </div>

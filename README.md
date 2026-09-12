@@ -14,7 +14,7 @@ bun install
 ```
 bun run start
 ```
-브라우저에서 `localhost:4747`을 연다. 상단 입력칸에 `owner/name`을 넣고 추가하면 그 레포의 열린 이슈가 목록에 보인다. 이슈를 누르면 아래에 본문이 보인다. 새로고침은 다시 가져온다.
+브라우저에서 `localhost:4747`을 연다. 상단 입력칸에 `owner/name`을 넣고 추가하면 그 레포의 열린 이슈가 그래프에 카드로 보인다. 카드를 누르면 아래에 본문과 "막는 이슈"가 보인다. 카드 아래 점을 끌어 다른 카드 위 점에 놓으면 "막는다" 선이 생긴다. 서로 막는 선은 빨갛다. 새로고침은 다시 가져온다.
 
 개발은 `bun run dev`. 검증은 `bun test` · `bun run check`.
 
@@ -30,7 +30,9 @@ bun run start
 ├── scripts/
 ├── server/
 │   ├── db/
+│   ├── deps/
 │   ├── github/
+│   ├── graph/
 │   └── sync/
 ├── web/
 │   └── src/
