@@ -29,7 +29,7 @@ export function priorityOf(labels: string[]): Priority {
 export const isHold = (labels: string[]) => labels.includes("hold");
 
 /** 순서에 드는 이슈: 열려 있고 hold가 아닌 것. */
-export function orderable(issues: OrderIssue[]): OrderIssue[] {
+export function orderable<T extends OrderIssue>(issues: T[]): T[] {
   return issues.filter((i) => i.state === "open" && !isHold(i.labels));
 }
 

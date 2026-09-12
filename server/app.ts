@@ -5,12 +5,15 @@ import { openDb } from "./db";
 import { ghListIssues, type IssueSource } from "./github/gh";
 import { addRepo, listIssues, listRepos, syncAll } from "./sync";
 import { addDep, listDeps, removeDep } from "./deps";
+import { claudeProposer, type Proposer } from "./llm/claude";
+import { latestProposal, propose } from "./propose";
 
-export type AppDeps = { db?: Database; source?: IssueSource };
+export type AppDeps = { db?: Database; source?: IssueSource; proposer?: Proposer };
 
 export function createApp(deps: AppDeps = {}) {
   const db = deps.db ?? openDb();
   const source = deps.source ?? ghListIssues;
+  const proposer = deps.proposer ?? claudeProposer;
   const app = new Hono();
 
   app.get("/api/health", (c) => c.json({ ok: true, name: "cadence" }));
@@ -56,6 +59,13 @@ export function createApp(deps: AppDeps = {}) {
   app.delete("/api/deps/:blocker/:blocked", (c) => {
     const ok = removeDep(db, Number(c.req.param("blocker")), Number(c.req.param("blocked")));
     return ok ? c.body(null, 204) : c.json({ error: "없는 선이다" }, 404);
+  });
+
+  app.get("/api/proposals/latest", (c) => c.json(latestProposal(db)));
+  app.post("/api/propose", async (c) => {
+    const r = await propose(db, listIssues(db, { state: "open" }), listRepos(db), listDeps(db), proposer);
+    if (!r.ok) return c.json({ error: "순환이 있어 제안하지 않는다", cycles: r.cycles }, 409);
+    return c.json(r.proposal);
   });
 
   // 빌드된 프론트. dev에서는 Vite가 대신 서빙하므로 여기 안 온다.
