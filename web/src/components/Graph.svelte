@@ -29,6 +29,21 @@
     });
     if (changed) nodes = next;
   });
+  // 강조도 플래그만. data.highlight / data.dim.
+  $effect(() => {
+    const on = new Set(store.highlight.map(String));
+    const active = on.size > 0;
+    const current = untrack(() => nodes);
+    let changed = false;
+    const next = current.map((n) => {
+      const hi = on.has(n.id);
+      const dim = active && !hi;
+      if (n.data.highlight === hi && n.data.dim === dim) return n;
+      changed = true;
+      return { ...n, data: { ...n.data, highlight: hi, dim } };
+    });
+    if (changed) nodes = next;
+  });
 
   function onconnect(c: Connection) {
     // 위 핸들이 target, 아래 핸들이 source. 아래에서 끌어 위로 놓으면 source가 target을 막는다.

@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { store, addRepo, refresh } from "../lib/store.svelte";
+  import { store, addRepo, refresh, runPropose, cycleCount } from "../lib/store.svelte";
+
+  const cycles = $derived(cycleCount());
 
   let full = $state("");
 
@@ -25,7 +27,13 @@
   </div>
   <div class="actions">
     {#if store.error}<span class="error">{store.error}</span>{/if}
-    <button onclick={refresh} disabled={store.busy}>{store.busy ? "…" : "새로고침"}</button>
+    <button onclick={refresh} disabled={store.busy || store.proposing}>{store.busy ? "…" : "새로고침"}</button>
+    <button
+      class="primary"
+      onclick={runPropose}
+      disabled={store.busy || store.proposing || store.issues.length === 0 || cycles > 0}
+      title={cycles > 0 ? `순환에 걸린 선이 ${cycles}개 있어 제안하지 않는다` : "claude가 패키지를 제안한다. 몇 초 걸린다"}
+    >{store.proposing ? "제안 중…" : "제안"}</button>
   </div>
 </header>
 
@@ -40,4 +48,5 @@
   button:disabled { opacity: 0.5; cursor: default; }
   .actions { display: flex; align-items: center; gap: 12px; }
   .error { color: #d73a4a; font-size: 12px; }
+  .primary { border-color: #4a90e2; color: #4a90e2; font-weight: 600; }
 </style>
