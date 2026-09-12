@@ -4,6 +4,7 @@
   import Header from "./components/Header.svelte";
   import Graph from "./components/Graph.svelte";
   import IssueDetail from "./components/IssueDetail.svelte";
+  import Packages from "./components/Packages.svelte";
 
   // 화면은 하나다: 좌(그래프) · 우(패키지 자리) · 하(상세).
   onMount(load);
@@ -12,7 +13,7 @@
 <div class="layout">
   <div class="header"><Header /></div>
   <main class="left"><Graph /></main>
-  <aside class="right"><p class="placeholder">패키지</p></aside>
+  <aside class="right"><Packages /></aside>
   <section class="bottom"><IssueDetail /></section>
 </div>
 
@@ -29,7 +30,6 @@
   }
   .header { grid-area: header; border-bottom: 1px solid #8884; }
   .left { grid-area: left; min-height: 0; }
-  .right { grid-area: right; border-left: 1px solid #8884; }
+  .right { grid-area: right; border-left: 1px solid #8884; min-height: 0; }
   .bottom { grid-area: bottom; border-top: 1px solid #8884; min-height: 0; }
-  .placeholder { color: #888; text-align: center; padding: 24px; }
 </style>

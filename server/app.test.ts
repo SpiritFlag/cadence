@@ -40,3 +40,21 @@ test("deps 추가 → 목록 → 삭제", async () => {
   expect((await app.request("/api/deps/1/2", { method: "DELETE" })).status).toBe(204);
   expect((await app.request("/api/deps/1/2", { method: "DELETE" })).status).toBe(404);
 });
+
+test("apply: 반영된 건이 있으면 다시 가져온다", async () => {
+  let synced = 0;
+  const app = createApp({
+    db: openDb(":memory:"),
+    source: async () => { synced++; return [{ ...fake[0]!, labels: [{ name: "p2" }] }]; },
+    labels: { read: async () => ["p2"], write: async () => {} },
+  });
+  const json = (path: string, body: unknown) =>
+    app.request(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  await json("/api/repos", { full: "a/b" });
+  await json("/api/sync", {});
+  const before = synced;
+  const r = (await (await json("/api/apply", { changes: [{ issue_id: 1, from: "p2", to: "p1" }] })).json()) as { outcomes: { status: string }[]; synced: unknown };
+  expect(r.outcomes[0]!.status).toBe("applied");
+  expect(synced).toBe(before + 1);
+  expect(r.synced).toEqual({ "a/b": 1 });
+});
