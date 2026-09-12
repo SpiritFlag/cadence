@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Package } from "../../../server/propose";
   import type { PackageWarning } from "../../../server/graph/order";
-  import { store, issueById, select, setHighlight } from "../lib/store.svelte";
+  import { store, issueById, select, setHighlight, toggleChange, outcomeOf } from "../lib/store.svelte";
   import LabelBadge from "./LabelBadge.svelte";
 
   let { pkg, warnings }: { pkg: Package; warnings: PackageWarning[] } = $props();
@@ -33,7 +33,12 @@
     <ul class="changes">
       {#each pkg.label_changes as c (c.issue_id)}
         {@const i = issueById(c.issue_id)}
-        <li>↑ #{i?.number ?? c.issue_id} <LabelBadge name={c.from} /> → <LabelBadge name={c.to} /></li>
+        {@const o = outcomeOf(c.issue_id)}
+        <li class:rejected={!!store.rejected[c.issue_id]}>
+          <input type="checkbox" checked={!store.rejected[c.issue_id]} onchange={() => toggleChange(c.issue_id)} disabled={store.applying} />
+          ↑ #{i?.number ?? c.issue_id} <LabelBadge name={c.from} /> → <LabelBadge name={c.to} />
+          {#if o}<span class="outcome {o.status}" title={o.message}>{o.status === "applied" ? "반영" : o.status === "skipped" ? "건너뜀" : "실패"} · {o.message}</span>{/if}
+        </li>
       {/each}
     </ul>
   {/if}
@@ -57,6 +62,11 @@
   .chip.missing { color: #d73a4a; cursor: default; }
   .reason { margin: 0 0 6px; font-size: 12px; color: #888; line-height: 1.4; }
   .changes, .warnings { margin: 0; padding-left: 4px; list-style: none; font-size: 12px; }
-  .changes li { display: flex; align-items: center; gap: 4px; }
+  .changes li { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+  .changes li.rejected { opacity: 0.5; }
+  .changes input { margin: 0 2px 0 0; }
+  .outcome { font-size: 11px; color: #888; }
+  .outcome.applied { color: #0e8a16; }
+  .outcome.failed { color: #d73a4a; }
   .warnings { color: #d73a4a; }
 </style>

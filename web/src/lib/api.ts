@@ -1,6 +1,7 @@
 import type { Issue, Repo } from "../../../server/sync";
 import type { Dep } from "../../../server/deps";
 import type { Proposal } from "../../../server/propose";
+import type { ApplyChange, ApplyOutcome } from "../../../server/apply";
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, { headers: { "content-type": "application/json" }, ...init });
@@ -22,4 +23,6 @@ export const api = {
     call<void>(`/api/deps/${blocker_id}/${blocked_id}`, { method: "DELETE" }),
   latestProposal: () => call<Proposal | null>("/api/proposals/latest"),
   propose: () => call<Proposal>("/api/propose", { method: "POST" }),
+  apply: (changes: ApplyChange[]) =>
+    call<{ outcomes: ApplyOutcome[]; synced: Record<string, number> | null }>("/api/apply", { method: "POST", body: JSON.stringify({ changes }) }),
 };

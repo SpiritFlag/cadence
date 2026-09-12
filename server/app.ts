@@ -2,18 +2,20 @@ import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
 import type { Database } from "bun:sqlite";
 import { openDb } from "./db";
-import { ghListIssues, type IssueSource } from "./github/gh";
+import { ghListIssues, ghLabels, type GhLabels, type IssueSource } from "./github/gh";
+import { applyChanges, type ApplyChange } from "./apply";
 import { addRepo, listIssues, listRepos, syncAll } from "./sync";
 import { addDep, listDeps, removeDep } from "./deps";
 import { claudeProposer, type Proposer } from "./llm/claude";
 import { latestProposal, propose } from "./propose";
 
-export type AppDeps = { db?: Database; source?: IssueSource; proposer?: Proposer };
+export type AppDeps = { db?: Database; source?: IssueSource; proposer?: Proposer; labels?: GhLabels };
 
 export function createApp(deps: AppDeps = {}) {
   const db = deps.db ?? openDb();
   const source = deps.source ?? ghListIssues;
   const proposer = deps.proposer ?? claudeProposer;
+  const labels = deps.labels ?? ghLabels;
   const app = new Hono();
 
   app.get("/api/health", (c) => c.json({ ok: true, name: "cadence" }));
@@ -66,6 +68,15 @@ export function createApp(deps: AppDeps = {}) {
     const r = await propose(db, listIssues(db, { state: "open" }), listRepos(db), listDeps(db), proposer);
     if (!r.ok) return c.json({ error: "순환이 있어 제안하지 않는다", cycles: r.cycles }, 409);
     return c.json(r.proposal);
+  });
+
+  app.post("/api/apply", async (c) => {
+    const { changes } = (await c.req.json()) as { changes?: ApplyChange[] };
+    if (!Array.isArray(changes)) return c.json({ error: "changes가 필요하다" }, 400);
+    const outcomes = await applyChanges(db, changes, labels);
+    // 성공한 건이 있으면 다시 가져와 로컬 라벨을 맞춘다.
+    const synced = outcomes.some((o) => o.status === "applied") ? await syncAll(db, source) : null;
+    return c.json({ outcomes, synced });
   });
 
   // 빌드된 프론트. dev에서는 Vite가 대신 서빙하므로 여기 안 온다.

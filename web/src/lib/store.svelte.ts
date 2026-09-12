@@ -1,6 +1,7 @@
 import type { Issue, Repo } from "../../../server/sync";
 import type { Dep } from "../../../server/deps";
-import type { Proposal } from "../../../server/propose";
+import type { Proposal, LabelChange } from "../../../server/propose";
+import type { ApplyOutcome } from "../../../server/apply";
 import { cycleEdges } from "../../../server/graph/cycle";
 import { api } from "./api";
 
@@ -12,8 +13,12 @@ export const store = $state({
   proposal: null as Proposal | null,
   /** 패키지 카드에 마우스를 올렸을 때 강조할 이슈 id */
   highlight: [] as number[],
+  /** 체크를 푼 라벨 변경. 키는 issue_id. 없으면 승인. */
+  rejected: {} as Record<number, boolean>,
+  applyResult: null as ApplyOutcome[] | null,
   busy: false,
   proposing: false,
+  applying: false,
   error: null as string | null,
 });
 
@@ -106,6 +111,8 @@ export async function runPropose() {
   store.error = null;
   try {
     store.proposal = await api.propose();
+    store.rejected = {};
+    store.applyResult = null;
   } catch (e) {
     store.error = (e as Error).message;
   } finally {
@@ -115,4 +122,47 @@ export async function runPropose() {
 
 export function setHighlight(ids: number[]) {
   store.highlight = ids;
+}
+
+/** 제안 전체의 라벨 변경. 같은 이슈는 앞 패키지 것만. */
+export function allChanges(): LabelChange[] {
+  const seen = new Set<number>();
+  const out: LabelChange[] = [];
+  for (const p of store.proposal?.packages ?? []) {
+    for (const c of p.label_changes) {
+      if (seen.has(c.issue_id)) continue;
+      seen.add(c.issue_id);
+      out.push(c);
+    }
+  }
+  return out;
+}
+
+export function approvedChanges(): LabelChange[] {
+  return allChanges().filter((c) => !store.rejected[c.issue_id]);
+}
+
+export function toggleChange(issue_id: number) {
+  store.rejected[issue_id] = !store.rejected[issue_id];
+}
+
+/** [승인한 라벨 변경 반영]. 서버가 건마다 gh를 부르고, 성공한 건이 있으면 다시 가져온다. */
+export async function runApply() {
+  const changes = approvedChanges();
+  if (changes.length === 0) return;
+  store.applying = true;
+  store.error = null;
+  try {
+    const r = await api.apply(changes);
+    store.applyResult = r.outcomes;
+    if (r.synced) await reload();
+  } catch (e) {
+    store.error = (e as Error).message;
+  } finally {
+    store.applying = false;
+  }
+}
+
+export function outcomeOf(issue_id: number): ApplyOutcome | undefined {
+  return store.applyResult?.find((o) => o.issue_id === issue_id);
 }
