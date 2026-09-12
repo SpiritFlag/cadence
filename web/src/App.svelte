@@ -1,14 +1,19 @@
 <script lang="ts">
-  // 화면은 하나다: 좌(그래프 자리) · 우(패키지 자리) · 하(상세). 이번 배치는 뼈대만.
+  import { onMount } from "svelte";
+  import { load } from "./lib/store.svelte";
+  import Header from "./components/Header.svelte";
+  import IssueList from "./components/IssueList.svelte";
+  import IssueDetail from "./components/IssueDetail.svelte";
+
+  // 화면은 하나다: 좌(지금은 목록, 나중에 그래프) · 우(패키지 자리) · 하(상세).
+  onMount(load);
 </script>
 
 <div class="layout">
-  <header class="header">
-    <strong>cadence</strong>
-  </header>
-  <main class="left"></main>
-  <aside class="right"></aside>
-  <section class="bottom"></section>
+  <div class="header"><Header /></div>
+  <main class="left"><IssueList /></main>
+  <aside class="right"><p class="placeholder">패키지</p></aside>
+  <section class="bottom"><IssueDetail /></section>
 </div>
 
 <style>
@@ -22,8 +27,9 @@
       "bottom bottom";
     height: 100vh;
   }
-  .header { grid-area: header; display: flex; align-items: center; padding: 0 16px; border-bottom: 1px solid #8884; }
-  .left { grid-area: left; }
+  .header { grid-area: header; border-bottom: 1px solid #8884; }
+  .left { grid-area: left; min-height: 0; }
   .right { grid-area: right; border-left: 1px solid #8884; }
-  .bottom { grid-area: bottom; border-top: 1px solid #8884; }
+  .bottom { grid-area: bottom; border-top: 1px solid #8884; min-height: 0; }
+  .placeholder { color: #888; text-align: center; padding: 24px; }
 </style>
