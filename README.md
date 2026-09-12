@@ -18,6 +18,7 @@
 ```
 
 ## 더 보기
+- `docs/design.md` — 설계 근거
 - `docs/cycles/` — 사이클 문서
 - `CONTRIBUTING.md` — 이슈 · 브랜치 · 사이클 규칙
 - [Releases](https://github.com/SpiritFlag/cadence/releases) — 버전별 변경
