@@ -4,6 +4,7 @@ import type { Database } from "bun:sqlite";
 import { openDb } from "./db";
 import { ghListIssues, type IssueSource } from "./github/gh";
 import { addRepo, listIssues, listRepos, syncAll } from "./sync";
+import { addDep, listDeps, removeDep } from "./deps";
 
 export type AppDeps = { db?: Database; source?: IssueSource };
 
@@ -38,6 +39,23 @@ export function createApp(deps: AppDeps = {}) {
     const opts: { state?: "open" | "closed" } = {};
     if (state === "open" || state === "closed") opts.state = state;
     return c.json(listIssues(db, opts));
+  });
+
+  app.get("/api/deps", (c) => c.json(listDeps(db)));
+  app.post("/api/deps", async (c) => {
+    const { blocker_id, blocked_id } = (await c.req.json()) as { blocker_id?: number; blocked_id?: number };
+    if (typeof blocker_id !== "number" || typeof blocked_id !== "number") {
+      return c.json({ error: "blocker_id · blocked_id가 필요하다" }, 400);
+    }
+    try {
+      return c.json(addDep(db, blocker_id, blocked_id), 201);
+    } catch (e) {
+      return c.json({ error: (e as Error).message }, 400);
+    }
+  });
+  app.delete("/api/deps/:blocker/:blocked", (c) => {
+    const ok = removeDep(db, Number(c.req.param("blocker")), Number(c.req.param("blocked")));
+    return ok ? c.body(null, 204) : c.json({ error: "없는 선이다" }, 404);
   });
 
   // 빌드된 프론트. dev에서는 Vite가 대신 서빙하므로 여기 안 온다.
