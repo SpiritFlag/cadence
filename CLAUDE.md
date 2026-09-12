@@ -1,3 +1,3 @@
 ## cycle
 
-- 검증: 자동 테스트 없음 (아직 코드 없음 · 로컬 웹 대시보드 + sqlite + gh 동기화 예정). 육안 확인은 사용자. 러너가 생기면 `/cycle:init`으로 이 줄을 실측해 다시 채운다
+- 검증: `bun test` (서버 단위 테스트 · 1초 미만) · `bun run check` (svelte-check, 타입 · Svelte 진단 · 5초 안팎) · 화면은 `bun run dev`(localhost:4747)에서 사용자 육안
