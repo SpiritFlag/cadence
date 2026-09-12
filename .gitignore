@@ -1,0 +1,11 @@
+# sqlite
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# 로컬 환경
+.env
+.env.local
