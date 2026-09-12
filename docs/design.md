@@ -110,3 +110,29 @@ cadence는 토폴로지와 현재 라벨을 보고 "다음에 할 것"의 순서
 - **대상 레포**: 사용자가 화면에서 `owner/name`을 추가한다. 여러 개일 수 있다. sqlite에 저장한다.
 - **동기화 시점**: 앱을 켤 때와 사용자가 새로고침을 누를 때. 주기 폴링은 하지 않는다.
 - **닫힌 이슈**: 그래프에서 빼되 sqlite에는 남긴다. 의존 선이 끊기지 않게 한다.
+
+## 데이터 모델
+
+| 테이블 | 열 | 메모 |
+|---|---|---|
+| `repos` | id · owner · name · added_at | 사용자가 화면에서 추가한다 |
+| `issues` | id · repo_id · number · title · body · state · labels(JSON) · updated_at · closed_at · synced_at | `(repo_id, number)` 유일. 닫힌 이슈도 남긴다 |
+| `deps` | blocker_id · blocked_id · created_at | 방향은 blocker → blocked, "A가 B를 막는다". 자기 자신은 금지. 레포를 넘나드는 의존을 허용한다 |
+| `proposals` | id · created_at · input_hash · output(JSON) | 마지막 제안의 캐시. 다시 켜도 LLM을 돌리지 않고 마지막 제안이 보인다 |
+
+## 실행 형태
+
+- **일상**: `bun run start`. 빌드된 Svelte를 Hono가 서빙한다. 프로세스 하나. 브라우저로 `localhost:4747`.
+- **개발**: `bun run dev`. Vite 개발 서버와 Hono가 함께 뜨고 `/api`는 프록시한다. 프로세스는 둘이지만 명령은 하나다.
+- **sqlite 파일**: `~/.cadence/cadence.sqlite`. 레포 여러 개를 다루는 도구라 프로젝트 폴더 밖에 둔다. `CADENCE_HOME`으로 바꿀 수 있다.
+
+## 어긋난 경우
+
+| 상황 | 처리 |
+|---|---|
+| p 라벨이 없는 이슈 | `p3`로 취급한다. 카드에 "라벨 없음"을 표시한다 |
+| p 라벨이 둘 이상 | 높은 것을 쓴다 |
+| 반영 직전 GitHub의 라벨이 제안 당시와 다르다 | 그 건만 건너뛰고 표시한다. 나머지는 반영한다 |
+| `gh`가 실패한다 | 그 건을 실패로 표시한다. 로컬은 바꾸지 않는다. 성공한 것만 다시 가져온다 |
+| LLM 출력 JSON이 깨진다 | 한 번 재시도한다. 또 깨지면 코드가 만든 후보 순서만 "제안 없음"으로 표시한다 |
+| 순환 | 제안을 돌리지 않는다. 순환을 표시한다 |
