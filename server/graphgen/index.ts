@@ -3,7 +3,7 @@ import type { Database } from "bun:sqlite";
 import type { Proposer } from "../llm/claude";
 import { comma, noLog, type Log } from "../log";
 import type { Issue, Repo } from "../sync";
-import { listDeps, listRemovals } from "../deps";
+import { addDep, listDeps, listRemovals, removeDep } from "../deps";
 import { edgeKey, type Edge } from "../graph/cycle";
 
 export type SuggestionKind = "remove" | "reverse" | "redraw";
@@ -67,7 +67,7 @@ export function buildGraphPrompt(issues: Issue[], label: string, userDeps: Edge[
   lines.push("5. edges에는 네가 긋는 선만 넣는다. 아래 사용자 선과 같은 선은 넣지 않는다.");
   lines.push("6. user_edges에는 사용자 선마다 판정을 하나씩 넣는다. keep(맞다) · remove(필요 없는 선이다) · reverse(방향이 반대다). 사용자가 그은 선이니 확실히 틀렸을 때만 remove나 reverse다.");
   lines.push("7. 사용자가 지운 선은 다시 긋지 않는 것이 기본이다. 이슈 내용으로 보아 꼭 필요하면 edges에 넣고 reason에 왜 다시 필요한지 적는다.");
-  lines.push("8. reason은 \"-다\" 체 한 문장. 사용자를 부르지 않는다. 이슈는 반드시 아래 id로 가리킨다.");
+  lines.push("8. blocker_id · blocked_id에는 반드시 아래 id를 쓴다. reason은 \"-다\" 체 짧은 한 문장이고, 이슈를 가리킬 때는 id가 아니라 #번호를 쓴다. 사용자를 부르지 않는다.");
   lines.push("");
   lines.push("## 사용자 선 (blocker → blocked. id 기준)");
   lines.push(...edgeLines(userDeps));
@@ -249,4 +249,42 @@ export function latestGraphRun(db: Database, repo_id: number): GraphRun | null {
 
 export function listSuggestions(db: Database, repo_id: number): DepSuggestion[] {
   return db.query<DepSuggestion, [number]>("select * from dep_suggestions where repo_id = ? order by id").all(repo_id);
+}
+
+export type GraphState = { run: GraphRun | null; suggestions: DepSuggestion[] };
+
+export function graphState(db: Database, repo_id: number): GraphState {
+  return { run: latestGraphRun(db, repo_id), suggestions: listSuggestions(db, repo_id) };
+}
+
+/**
+ * 승인. 제안을 지우고, 대상이 아직 그대로면 적용한다. 승인으로 긋는 선은 사용자 선이다.
+ * 지움 · 뒤집음은 그 사용자 선이, 다시 긋자는 지운 선 기억이 남아 있어야 한다. 아니면 stale. 없는 제안이면 null.
+ */
+export function approveSuggestion(db: Database, id: number): "applied" | "stale" | null {
+  return db.transaction((): "applied" | "stale" | null => {
+    const s = db.query<DepSuggestion, [number]>("select * from dep_suggestions where id = ?").get(id);
+    if (!s) return null;
+    db.run("delete from dep_suggestions where id = ?", [id]);
+    if (s.kind === "redraw") {
+      const remembered = db
+        .query<{ one: number }, [number, number]>("select 1 as one from dep_removals where blocker_id = ? and blocked_id = ?")
+        .get(s.blocker_id, s.blocked_id);
+      if (!remembered) return "stale";
+      addDep(db, s.blocker_id, s.blocked_id);
+      return "applied";
+    }
+    const dep = db
+      .query<{ source: string }, [number, number]>("select source from deps where blocker_id = ? and blocked_id = ?")
+      .get(s.blocker_id, s.blocked_id);
+    if (dep?.source !== "user") return "stale";
+    removeDep(db, s.blocker_id, s.blocked_id);
+    if (s.kind === "reverse") addDep(db, s.blocked_id, s.blocker_id);
+    return "applied";
+  })();
+}
+
+/** 거절. 제안만 지운다. 없는 제안이면 false. */
+export function rejectSuggestion(db: Database, id: number): boolean {
+  return db.run("delete from dep_suggestions where id = ?", [id]).changes > 0;
 }

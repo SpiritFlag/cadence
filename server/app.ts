@@ -9,6 +9,7 @@ import { addRepo, listIssues, listMilestones, listRepos, syncAll } from "./sync"
 import { addDep, listDeps, removeDep } from "./deps";
 import { claudeProposer, type Proposer } from "./llm/claude";
 import { latestProposal, propose } from "./propose";
+import { approveSuggestion, generateGraph, graphState, rejectSuggestion } from "./graphgen";
 import { createLogBus, type LogBus, type LogLine } from "./log";
 
 /** 로그 SSE 핑 간격. 서버 유휴 제한(240초)보다 짧아야 연결이 안 끊긴다. */
@@ -89,6 +90,26 @@ export function createApp(deps: AppDeps = {}) {
     const ok = removeDep(db, Number(c.req.param("blocker")), Number(c.req.param("blocked")));
     return ok ? c.body(null, 204) : c.json({ error: "없는 선이다" }, 404);
   });
+
+  app.get("/api/graph/latest", (c) => {
+    const r = findRepo(c.req.query("repo"));
+    return r ? c.json(graphState(db, r.id)) : c.json(NO_REPO, 400);
+  });
+  app.post("/api/graph/generate", async (c) => {
+    const { repo_id } = (await c.req.json().catch(() => ({}))) as { repo_id?: number };
+    const repo = findRepo(repo_id);
+    if (!repo) return c.json(NO_REPO, 400);
+    await generateGraph(db, repo.id, listIssues(db, { state: "open", repo_id: repo.id }), listRepos(db), proposer, logs.log);
+    return c.json(graphState(db, repo.id));
+  });
+  const NO_SUGGESTION = { error: "없는 제안이다" };
+  app.post("/api/graph/suggestions/:id/approve", (c) => {
+    const result = approveSuggestion(db, Number(c.req.param("id")));
+    return result ? c.json({ result }) : c.json(NO_SUGGESTION, 404);
+  });
+  app.post("/api/graph/suggestions/:id/reject", (c) =>
+    rejectSuggestion(db, Number(c.req.param("id"))) ? c.body(null, 204) : c.json(NO_SUGGESTION, 404),
+  );
 
   app.get("/api/proposals/latest", (c) => {
     const r = findRepo(c.req.query("repo"));

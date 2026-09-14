@@ -115,3 +115,49 @@ test("마일스톤은 레포마다, 붙은 이슈 번호와 함께", async () =>
   expect(await (await app.request("/api/milestones?repo=1")).json()).toMatchObject([{ number: 1, title: "v0.1.0", state: "closed", issues: [1] }]);
   expect(await (await app.request("/api/milestones?repo=2")).json()).toEqual([]);
 });
+
+test("그래프 생성 → 최신 결과 · 제안 → 승인 · 거절", async () => {
+  const app = createApp({
+    db: openDb(":memory:"),
+    milestones: noMilestones,
+    source: async () => [1, 2, 3].map((number) => ({ ...fake[0]!, number })),
+    proposer: async () => ({
+      output: {
+        edges: [{ blocker_id: 2, blocked_id: 3, reason: "2가 먼저다" }],
+        user_edges: [{ blocker_id: 1, blocked_id: 2, verdict: "remove", reason: "필요 없다" }],
+      },
+      cost_usd: 0.3,
+    }),
+    logs: createLogBus({ print: () => {} }),
+  });
+  const json = (path: string, method = "GET", body?: unknown) =>
+    app.request(path, { method, headers: { "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+  await json("/api/repos", "POST", { full: "a/b" });
+  await json("/api/sync", "POST");
+  await json("/api/deps", "POST", { blocker_id: 1, blocked_id: 2 });
+
+  expect((await json("/api/graph/latest")).status).toBe(400);
+  expect(await (await json("/api/graph/latest?repo=1")).json()).toEqual({ run: null, suggestions: [] });
+  expect((await json("/api/graph/generate", "POST", {})).status).toBe(400);
+
+  type State = { run: { id: number }; suggestions: { id: number }[] };
+  const made = (await (await json("/api/graph/generate", "POST", { repo_id: 1 })).json()) as State;
+  expect(made.run).toMatchObject({ status: "ok", added: 1, cost_usd: 0.3 });
+  expect(made.suggestions).toMatchObject([{ kind: "remove", blocker_id: 1, blocked_id: 2, reason: "필요 없다" }]);
+  expect(await (await json("/api/graph/latest?repo=1")).json()).toEqual(made);
+  expect(await (await json("/api/deps?repo=1")).json()).toMatchObject([
+    { blocker_id: 1, blocked_id: 2, source: "user" },
+    { blocker_id: 2, blocked_id: 3, source: "claude", reason: "2가 먼저다" },
+  ]);
+
+  const id = made.suggestions[0]!.id;
+  expect(await (await json(`/api/graph/suggestions/${id}/approve`, "POST")).json()).toEqual({ result: "applied" });
+  expect((await json(`/api/graph/suggestions/${id}/approve`, "POST")).status).toBe(404);
+  expect(await (await json("/api/deps?repo=1")).json()).toMatchObject([{ blocker_id: 2, blocked_id: 3 }]);
+
+  await json("/api/deps", "POST", { blocker_id: 1, blocked_id: 2 });
+  const again = (await (await json("/api/graph/generate", "POST", { repo_id: 1 })).json()) as State;
+  expect((await json(`/api/graph/suggestions/${again.suggestions[0]!.id}/reject`, "POST")).status).toBe(204);
+  expect((await json("/api/graph/suggestions/999/reject", "POST")).status).toBe(404);
+  expect(((await (await json("/api/deps?repo=1")).json()) as unknown[]).length).toBe(2);
+});

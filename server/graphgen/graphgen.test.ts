@@ -5,7 +5,7 @@ import { addRepo, listIssues, listRepos, syncRepo } from "../sync";
 import { addDep, listDeps, listRemovals, removeDep } from "../deps";
 import type { GhIssue } from "../github/gh";
 import type { Proposer } from "../llm/claude";
-import { buildGraphPrompt, generateGraph, GRAPH_SCHEMA, latestGraphRun, listSuggestions } from "./index";
+import { approveSuggestion, buildGraphPrompt, generateGraph, GRAPH_SCHEMA, latestGraphRun, listSuggestions, rejectSuggestion } from "./index";
 
 let db: Database;
 const gh = (n: number, over: Partial<GhIssue> = {}): GhIssue => ({
@@ -33,6 +33,7 @@ test("프롬프트에 규칙 · 사용자 선 · 지운 선 · 열린 이슈 본
   const issues = listIssues(db, { state: "open", repo_id: 1 });
   const p = buildGraphPrompt(issues, "a/b", [e(1, 2)], [e(3, 4)]);
   expect(p).toContain("순환을 만들지 않는다");
+  expect(p).toContain("이슈를 가리킬 때는 id가 아니라 #번호를 쓴다");
   expect(p).toContain("## 사용자 선 (blocker → blocked. id 기준)\n- 1 → 2");
   expect(p).toContain("## 사용자가 지운 선 (blocker → blocked. id 기준)\n- 3 → 4");
   expect(p).toContain("### id 5 · #5 · 라벨 p2");
@@ -129,4 +130,39 @@ test("두 번 다 깨지면 선 · 제안을 그대로 두고 none으로 남긴�
   expect(deps()).toEqual([[1, 2, "user", ""], [2, 3, "claude", "r"]]);
   expect(suggestions()).toEqual([["remove", 1, 2, "r"]]);
   expect(lines.slice(1)).toEqual(["출력이 선 모양이 아니다 · 다시 묻는다", "claude 실패 · 펑 · 그만 묻는다", `생성 없음 · 선 · 제안은 그대로 · 생성 #${run.id} · 합계 0.20 USD`]);
+});
+
+const approve = (kind: string) => approveSuggestion(db, listSuggestions(db, 1).find((s) => s.kind === kind)!.id);
+
+test("승인: 지움은 사용자 선을 지우고, 뒤집음은 반대 선을 사용자 선으로 긋고, 다시 긋자는 사용자 선으로 긋고 기억에서 뺀다", async () => {
+  addDep(db, 1, 2);
+  addDep(db, 2, 3);
+  claude(4, 5);
+  removeDep(db, 4, 5);
+  await gen(answer([e(4, 5, "필요하다")], [v(1, 2, "remove"), v(2, 3, "reverse")]));
+  expect(approve("remove")).toBe("applied");
+  expect(approve("reverse")).toBe("applied");
+  expect(approve("redraw")).toBe("applied");
+  expect(deps()).toEqual([[3, 2, "user", ""], [4, 5, "user", ""]]);
+  expect(listRemovals(db, 1)).toEqual([]);
+  expect(suggestions()).toEqual([]);
+});
+
+test("거절은 제안만 지운다. 대상이 이미 바뀐 제안은 승인해도 아무 일 없이 사라지고, 없는 제안은 null", async () => {
+  addDep(db, 1, 2);
+  addDep(db, 2, 3);
+  claude(4, 5);
+  removeDep(db, 4, 5);
+  await gen(answer([e(4, 5)], [v(1, 2, "remove"), v(2, 3, "reverse")]));
+  const rejected = listSuggestions(db, 1).find((s) => s.kind === "remove")!.id;
+  expect(rejectSuggestion(db, rejected)).toBe(true);
+  expect(rejectSuggestion(db, rejected)).toBe(false);
+
+  removeDep(db, 2, 3); // 사용자가 먼저 지웠다
+  addDep(db, 4, 5); // 사용자가 먼저 그었다
+  expect(approve("reverse")).toBe("stale");
+  expect(approve("redraw")).toBe("stale");
+  expect(deps()).toEqual([[1, 2, "user", ""], [4, 5, "user", ""]]);
+  expect(suggestions()).toEqual([]);
+  expect(approveSuggestion(db, 999)).toBeNull();
 });
