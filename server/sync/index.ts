@@ -73,9 +73,18 @@ export async function syncAll(db: Database, source: IssueSource): Promise<Record
   return result;
 }
 
-export function listIssues(db: Database, opts: { state?: "open" | "closed" } = {}): Issue[] {
-  const rows = opts.state
-    ? db.query<IssueRow, [string]>("select * from issues where state = ? order by repo_id, number").all(opts.state)
-    : db.query<IssueRow, []>("select * from issues order by repo_id, number").all();
+export function listIssues(db: Database, opts: { state?: "open" | "closed"; repo_id?: number } = {}): Issue[] {
+  const where: string[] = [];
+  const params: (string | number)[] = [];
+  if (opts.state) {
+    where.push("state = ?");
+    params.push(opts.state);
+  }
+  if (opts.repo_id !== undefined) {
+    where.push("repo_id = ?");
+    params.push(opts.repo_id);
+  }
+  const sql = `select * from issues${where.length ? ` where ${where.join(" and ")}` : ""} order by repo_id, number`;
+  const rows = db.query<IssueRow, (string | number)[]>(sql).all(...params);
   return rows.map((r) => ({ ...r, labels: JSON.parse(r.labels) as string[] }));
 }

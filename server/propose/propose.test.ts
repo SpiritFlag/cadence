@@ -41,20 +41,20 @@ test("제안을 받아 검증하고 저장한다. 어기면 경고가 붙는다"
     ] },
     cost_usd: 0.1,
   });
-  const r = await propose(db, ...ctx(), proposer);
+  const r = await propose(db, 1, ...ctx(), proposer);
   expect(r.ok).toBe(true);
   if (!r.ok) return;
   expect(r.proposal.status).toBe("ok");
   expect(r.proposal.packages.map((p) => p.name)).toEqual(["둘", "나머지"]);
   expect(r.proposal.warnings.map((w) => w.kind)).toEqual(["chain"]); // 2를 막는 1이 뒤 패키지
   expect(r.proposal.cost_usd).toBe(0.1);
-  expect(latestProposal(db)?.id).toBe(r.proposal.id);
+  expect(latestProposal(db, 1)?.id).toBe(r.proposal.id);
 });
 
 test("깨진 출력은 한 번 재시도하고, 또 깨지면 none으로 후보 순서만 남긴다", async () => {
   let calls = 0;
   const proposer: Proposer = async () => { calls++; return { output: { nope: true }, cost_usd: 0.05 }; };
-  const r = await propose(db, ...ctx(), proposer);
+  const r = await propose(db, 1, ...ctx(), proposer);
   expect(calls).toBe(2);
   if (!r.ok) throw new Error();
   expect(r.proposal.status).toBe("none");
@@ -65,17 +65,35 @@ test("깨진 출력은 한 번 재시도하고, 또 깨지면 none으로 후보 
 
 test("proposer가 던져도 재시도 뒤 none", async () => {
   const proposer: Proposer = async () => { throw new Error("claude 실패"); };
-  const r = await propose(db, ...ctx(), proposer);
+  const r = await propose(db, 1, ...ctx(), proposer);
   if (!r.ok) throw new Error();
   expect(r.proposal.status).toBe("none");
+});
+
+test("고른 레포의 이슈만 프롬프트에 들어가고, 최근 제안은 레포마다다", async () => {
+  const other = addRepo(db, "a/c");
+  await syncRepo(db, other, async () => [gh(1, ["p1"], "다른 레포 본문")]);
+  let prompt = "";
+  const proposer: Proposer = async (p) => {
+    prompt = p;
+    return { output: { packages: [{ rank: 1, name: "전부", issue_ids: [1, 2, 3], reason: "r", label_changes: [] }] }, cost_usd: 0 };
+  };
+  const r = await propose(db, 1, ...ctx(), proposer);
+  expect(prompt).not.toContain("다른 레포 본문");
+  expect(prompt).not.toContain("a/c");
+  if (!r.ok) throw new Error();
+  expect(r.proposal.repo_id).toBe(1);
+  expect(r.proposal.warnings).toEqual([]); // 다른 레포 이슈가 "빠짐"으로 잡히지 않는다
+  expect(latestProposal(db, 1)?.id).toBe(r.proposal.id);
+  expect(latestProposal(db, other.id)).toBeNull();
 });
 
 test("순환이 있으면 proposer를 부르지 않는다", async () => {
   addDep(db, 2, 1);
   let calls = 0;
-  const r = await propose(db, ...ctx(), async () => { calls++; return { output: {}, cost_usd: 0 }; });
+  const r = await propose(db, 1, ...ctx(), async () => { calls++; return { output: {}, cost_usd: 0 }; });
   expect(calls).toBe(0);
   expect(r.ok).toBe(false);
   if (!r.ok) expect(r.cycles).toHaveLength(2);
-  expect(latestProposal(db)).toBeNull();
+  expect(latestProposal(db, 1)).toBeNull();
 });

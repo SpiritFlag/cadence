@@ -18,6 +18,10 @@ export function createApp(deps: AppDeps = {}) {
   const labels = deps.labels ?? ghLabels;
   const app = new Hono();
 
+  /** 등록된 레포 id면 그 레포, 아니면 null. */
+  const findRepo = (v: unknown) => listRepos(db).find((r) => r.id === Number(v)) ?? null;
+  const NO_REPO = { error: "repo가 필요하다 (등록된 레포 id)" };
+
   app.get("/api/health", (c) => c.json({ ok: true, name: "cadence" }));
 
   app.get("/api/repos", (c) => c.json(listRepos(db)));
@@ -41,12 +45,23 @@ export function createApp(deps: AppDeps = {}) {
 
   app.get("/api/issues", (c) => {
     const state = c.req.query("state");
-    const opts: { state?: "open" | "closed" } = {};
+    const opts: { state?: "open" | "closed"; repo_id?: number } = {};
     if (state === "open" || state === "closed") opts.state = state;
+    const repo = c.req.query("repo");
+    if (repo !== undefined) {
+      const r = findRepo(repo);
+      if (!r) return c.json(NO_REPO, 400);
+      opts.repo_id = r.id;
+    }
     return c.json(listIssues(db, opts));
   });
 
-  app.get("/api/deps", (c) => c.json(listDeps(db)));
+  app.get("/api/deps", (c) => {
+    const repo = c.req.query("repo");
+    if (repo === undefined) return c.json(listDeps(db));
+    const r = findRepo(repo);
+    return r ? c.json(listDeps(db, r.id)) : c.json(NO_REPO, 400);
+  });
   app.post("/api/deps", async (c) => {
     const { blocker_id, blocked_id } = (await c.req.json()) as { blocker_id?: number; blocked_id?: number };
     if (typeof blocker_id !== "number" || typeof blocked_id !== "number") {
@@ -63,9 +78,15 @@ export function createApp(deps: AppDeps = {}) {
     return ok ? c.body(null, 204) : c.json({ error: "없는 선이다" }, 404);
   });
 
-  app.get("/api/proposals/latest", (c) => c.json(latestProposal(db)));
+  app.get("/api/proposals/latest", (c) => {
+    const r = findRepo(c.req.query("repo"));
+    return r ? c.json(latestProposal(db, r.id)) : c.json(NO_REPO, 400);
+  });
   app.post("/api/propose", async (c) => {
-    const r = await propose(db, listIssues(db, { state: "open" }), listRepos(db), listDeps(db), proposer);
+    const { repo_id } = (await c.req.json().catch(() => ({}))) as { repo_id?: number };
+    const repo = findRepo(repo_id);
+    if (!repo) return c.json(NO_REPO, 400);
+    const r = await propose(db, repo.id, listIssues(db, { state: "open", repo_id: repo.id }), listRepos(db), listDeps(db, repo.id), proposer);
     if (!r.ok) return c.json({ error: "순환이 있어 제안하지 않는다", cycles: r.cycles }, 409);
     return c.json(r.proposal);
   });
