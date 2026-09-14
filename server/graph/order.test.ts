@@ -28,6 +28,14 @@ test("hold와 닫힌 이슈는 순서에 없다", () => {
   expect(r.promotions).toEqual([]);
 });
 
+test("마일스톤이 붙은 열린 이슈는 진행 중이라 순서 · 승격 · 패키지 검사에서 빠진다", () => {
+  const issues = [is(1, ["p3"]), { ...is(2, ["p1"]), milestone_number: 5 }, is(3, ["p2"])];
+  const r = candidateOrder(issues, [e(1, 2)]);
+  expect(r.order).toEqual([3, 1]);
+  expect(r.promotions).toEqual([]);
+  expect(checkPackages([{ rank: 1, issue_ids: [2] }], issues, []).map((w) => w.kind)).toEqual(["unknown"]);
+});
+
 test("순환이 있으면 순서가 없고 순환 선이 온다", () => {
   const r = candidateOrder([is(1), is(2)], [e(1, 2), e(2, 1)]);
   expect(r.order).toEqual([]);

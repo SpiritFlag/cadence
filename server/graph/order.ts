@@ -6,7 +6,7 @@ export const PRIORITIES: Priority[] = ["p1", "p2", "p3"];
 const RANK: Record<Priority, number> = { p1: 1, p2: 2, p3: 3 };
 
 /** 순서에 필요한 최소 이슈 모양. sync의 Issue가 그대로 맞는다. */
-export type OrderIssue = { id: number; number: number; labels: string[]; state: "open" | "closed" };
+export type OrderIssue = { id: number; number: number; labels: string[]; state: "open" | "closed"; milestone_number?: number | null };
 
 export type Promotion = { issue_id: number; from: Priority; to: Priority };
 
@@ -28,9 +28,12 @@ export function priorityOf(labels: string[]): Priority {
 
 export const isHold = (labels: string[]) => labels.includes("hold");
 
-/** 순서에 드는 이슈: 열려 있고 hold가 아닌 것. */
+/** 마일스톤이 붙은 열린 이슈는 사이클에 들어가 진행 중이다. */
+export const inProgress = (i: OrderIssue) => i.state === "open" && (i.milestone_number ?? null) !== null;
+
+/** 순서에 드는 이슈: 열려 있고 hold가 아니고 진행 중이 아닌 것. */
 export function orderable<T extends OrderIssue>(issues: T[]): T[] {
-  return issues.filter((i) => i.state === "open" && !isHold(i.labels));
+  return issues.filter((i) => i.state === "open" && !isHold(i.labels) && !inProgress(i));
 }
 
 export function candidateOrder(issues: OrderIssue[], deps: Edge[]): CandidateOrder {
@@ -100,9 +103,9 @@ export const PACKAGE_MAX = 5;
 export type PackageLike = { rank: number; issue_ids: number[] };
 
 export type PackageWarning = {
-  /** 어느 패키지에 붙는 경고인가. */
-  rank: number;
-  kind: "size" | "chain" | "duplicate" | "unknown";
+  /** 어느 패키지에 붙는 경고인가. 붙일 패키지가 없으면 null. */
+  rank: number | null;
+  kind: "size" | "chain" | "duplicate" | "unknown" | "carry";
   message: string;
 };
 
