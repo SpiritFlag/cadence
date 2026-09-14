@@ -1,4 +1,4 @@
-import type { Issue, Repo } from "../../../server/sync";
+import type { Issue, Milestone, Repo } from "../../../server/sync";
 import type { Dep } from "../../../server/deps";
 import type { Proposal } from "../../../server/propose";
 import type { ApplyChange, ApplyOutcome } from "../../../server/apply";
@@ -17,6 +17,7 @@ export const api = {
   sync: () => call<Record<string, number>>("/api/sync", { method: "POST" }),
   issues: (repo: number) => call<Issue[]>(`/api/issues?state=open&repo=${repo}`),
   deps: (repo: number) => call<Dep[]>(`/api/deps?repo=${repo}`),
+  milestones: (repo: number) => call<Milestone[]>(`/api/milestones?repo=${repo}`),
   addDep: (blocker_id: number, blocked_id: number) =>
     call<Dep>("/api/deps", { method: "POST", body: JSON.stringify({ blocker_id, blocked_id }) }),
   removeDep: (blocker_id: number, blocked_id: number) =>

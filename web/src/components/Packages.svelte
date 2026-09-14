@@ -1,6 +1,7 @@
 <script lang="ts">
   import { store, issueById, approvedChanges, allChanges, runApply } from "../lib/store.svelte";
   import PackageCard from "./PackageCard.svelte";
+  import Milestones from "./Milestones.svelte";
 
   const SHOW = 5;
   const p = $derived(store.proposal);
@@ -14,6 +15,7 @@
 </script>
 
 <div class="packages">
+  {#key store.repoId}<Milestones />{/key}
   <div class="title">다음 패키지</div>
   {#if !p}
     <p class="empty">{store.proposing ? "claude가 생각하는 중…" : "위의 [제안]을 누르면 여기 패키지가 보인다."}</p>
