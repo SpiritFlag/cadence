@@ -34,6 +34,8 @@ test("프롬프트에 규칙 · 사용자 선 · 지운 선 · 열린 이슈 본
   const p = buildGraphPrompt(issues, "a/b", [e(1, 2)], [e(3, 4)]);
   expect(p).toContain("순환을 만들지 않는다");
   expect(p).toContain("이슈를 가리킬 때는 id가 아니라 #번호를 쓴다");
+  expect(p).toContain("본문에 순서가 적혀 있으면 긋는다");
+  expect(p).toContain("사용자가 지운 선도 네가 보기에 맞으면 그대로 edges에 넣는다");
   expect(p).toContain("## 사용자 선 (blocker → blocked. id 기준)\n- 1 → 2");
   expect(p).toContain("## 사용자가 지운 선 (blocker → blocked. id 기준)\n- 3 → 4");
   expect(p).toContain("### id 5 · #5 · 라벨 p2");

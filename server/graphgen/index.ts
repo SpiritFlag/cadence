@@ -60,13 +60,13 @@ export function buildGraphPrompt(issues: Issue[], label: string, userDeps: Edge[
   lines.push(`너는 혼자 개발하는 사용자의 비서다. ${label} 레포의 열린 이슈를 읽고 이슈 사이의 의존 선을 긋는다.`);
   lines.push("");
   lines.push("## 규칙");
-  lines.push("1. 선은 blocker가 끝나야 blocked를 제대로 할 수 있을 때만 긋는다. 같은 화면 · 같은 영역 · 비슷한 주제라는 것만으로는 선이 아니다.");
-  lines.push("2. 본문에 적힌 선행 조건과 이슈 참조(#번호)를 가장 믿는다. 본문에 없으면 층의 선후(데이터 → 서버 → 화면)가 분명할 때만 긋는다.");
-  lines.push("3. 확실하지 않으면 긋지 않는다. 선이 많다고 좋은 것이 아니다.");
+  lines.push("1. 선은 순서다. blocker를 먼저 해야 blocked를 제대로 할 수 있다. 서로 관련 있다 · 함께 정한다 · 같은 재질이다 · 같은 계열이다는 선이 아니다. 그것은 패키지로 묶을 일이다.");
+  lines.push("2. 본문에 순서가 적혀 있으면 긋는다. \"~한 뒤 확인한다\" · \"~기준으로 확인한다\" · \"~가 바뀌면 따라간다\" · \"~와 조정 순서를 맞춘다\" · \"~가 먼저다\" 같은 말이다. 먼저 해야 하는 쪽이 blocker다.");
+  lines.push("3. 본문에 없어도 층의 선후(데이터 → 서버 → 화면)가 분명하면 긋는다. 둘 다 아니면 긋지 않는다.");
   lines.push("4. 순환을 만들지 않는다. 사용자 선과 합쳐도 순환이 없어야 한다.");
   lines.push("5. edges에는 네가 긋는 선만 넣는다. 아래 사용자 선과 같은 선은 넣지 않는다.");
   lines.push("6. user_edges에는 사용자 선마다 판정을 하나씩 넣는다. keep(맞다) · remove(필요 없는 선이다) · reverse(방향이 반대다). 사용자가 그은 선이니 확실히 틀렸을 때만 remove나 reverse다.");
-  lines.push("7. 사용자가 지운 선은 다시 긋지 않는 것이 기본이다. 이슈 내용으로 보아 꼭 필요하면 edges에 넣고 reason에 왜 다시 필요한지 적는다.");
+  lines.push("7. 사용자가 지운 선도 네가 보기에 맞으면 그대로 edges에 넣는다. 그 선은 바로 그어지지 않고 사용자에게 다시 물으니 reason에 왜 필요한지 적는다.");
   lines.push("8. blocker_id · blocked_id에는 반드시 아래 id를 쓴다. reason은 \"-다\" 체 짧은 한 문장이고, 이슈를 가리킬 때는 id가 아니라 #번호를 쓴다. 사용자를 부르지 않는다.");
   lines.push("");
   lines.push("## 사용자 선 (blocker → blocked. id 기준)");

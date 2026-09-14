@@ -205,6 +205,16 @@ export async function runGenerate() {
   }
 }
 
+/** 선 제안 [승인] · [거절]. 대상이 이미 바뀐 제안은 승인해도 제안만 사라진다. */
+export function resolveSuggestion(id: number, approve: boolean) {
+  return run(async () => {
+    if (approve) await api.approveSuggestion(id);
+    else await api.rejectSuggestion(id);
+    store.highlight = []; // 목록에서 빠진 줄은 마우스가 떠나도 알려주지 않는다
+    if (store.repoId !== null) [store.graph, store.deps] = await Promise.all([api.graph(store.repoId), api.deps(store.repoId)]);
+  });
+}
+
 export function setHighlight(ids: number[]) {
   store.highlight = ids;
 }

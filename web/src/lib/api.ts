@@ -27,6 +27,8 @@ export const api = {
   propose: (repo_id: number) => call<Proposal>("/api/propose", { method: "POST", body: JSON.stringify({ repo_id }) }),
   graph: (repo: number) => call<GraphState>(`/api/graph/latest?repo=${repo}`),
   generateGraph: (repo_id: number) => call<GraphState>("/api/graph/generate", { method: "POST", body: JSON.stringify({ repo_id }) }),
+  approveSuggestion: (id: number) => call<{ result: "applied" | "stale" }>(`/api/graph/suggestions/${id}/approve`, { method: "POST" }),
+  rejectSuggestion: (id: number) => call<void>(`/api/graph/suggestions/${id}/reject`, { method: "POST" }),
   apply: (changes: ApplyChange[]) =>
     call<{ outcomes: ApplyOutcome[]; synced: Record<string, number> | null }>("/api/apply", { method: "POST", body: JSON.stringify({ changes }) }),
 };
