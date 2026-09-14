@@ -100,7 +100,11 @@ export async function syncRepo(db: Database, repo: Repo, source: IssueSource, mi
           synced_at: now,
         });
       }
-      db.run("delete from milestones where repo_id = ? and synced_at <> ?", [repo.id, now]);
+      // 원천에 온 번호로 지운다. 동기화 시각으로 가르면 같은 밀리초에 두 번 돌 때 안 지워진다.
+      db.run("delete from milestones where repo_id = ? and number not in (select value from json_each(?))", [
+        repo.id,
+        JSON.stringify(ms.map((m) => m.number)),
+      ]);
     }
   })();
   return issues.length;
