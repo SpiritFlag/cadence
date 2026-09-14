@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import type { Proposer } from "../llm/claude";
+import { comma, noLog, type Log } from "../log";
 import type { Issue, Repo } from "../sync";
 import type { Dep } from "../deps";
 import { candidateOrder, checkPackages, orderable, PACKAGE_MAX, type Priority, type Promotion, type PackageWarning } from "../graph/order";
@@ -10,6 +11,7 @@ export type Package = { rank: number; name: string; issue_ids: number[]; reason:
 
 export type Proposal = {
   id: number;
+  repo_id: number;
   created_at: string;
   /** ok: LLM 제안 있음. none: 두 번 다 깨져 후보 순서만. */
   status: "ok" | "none";
@@ -124,42 +126,64 @@ function inputHash(issues: Issue[], deps: Dep[]): string {
   return h.digest("hex");
 }
 
-function save(db: Database, hash: string, proposal: Omit<Proposal, "id" | "created_at">): Proposal {
-  const r = db.run("insert into proposals (input_hash, output) values (?, ?)", [hash, JSON.stringify(proposal)]);
+type ProposalBody = Omit<Proposal, "id" | "repo_id" | "created_at">;
+
+function save(db: Database, repo_id: number, hash: string, proposal: ProposalBody): Proposal {
+  const r = db.run("insert into proposals (repo_id, input_hash, output) values (?, ?, ?)", [repo_id, hash, JSON.stringify(proposal)]);
   const row = db.query<{ id: number; created_at: string }, [number]>("select id, created_at from proposals where id = ?").get(Number(r.lastInsertRowid))!;
-  return { ...proposal, id: row.id, created_at: row.created_at };
+  return { ...proposal, id: row.id, repo_id, created_at: row.created_at };
 }
 
 export type ProposeResult = { ok: true; proposal: Proposal } | { ok: false; reason: "cycle"; cycles: Edge[] };
 
-/** 후보 순서를 만들고, 순환이 없으면 LLM에 묻고, 검증해서 저장한다. */
-export async function propose(db: Database, issues: Issue[], repos: Repo[], deps: Dep[], proposer: Proposer): Promise<ProposeResult> {
+/** 고른 레포의 이슈로만 후보 순서를 만들고, 순환이 없으면 LLM에 묻고, 검증해서 그 레포 제안으로 저장한다. 단계마다 log에 한 줄. */
+export async function propose(
+  db: Database, repo_id: number, allIssues: Issue[], repos: Repo[], allDeps: Dep[], proposer: Proposer, log: Log = noLog,
+): Promise<ProposeResult> {
+  const issues = allIssues.filter((i) => i.repo_id === repo_id);
+  const ids = new Set(issues.map((i) => i.id));
+  const deps = allDeps.filter((d) => ids.has(d.blocker_id) && ids.has(d.blocked_id));
+  const repo = repos.find((r) => r.id === repo_id);
+  const label = repo ? `${repo.owner}/${repo.name}` : `레포 ${repo_id}`;
   const order = candidateOrder(issues, deps);
-  if (order.cycles.length > 0) return { ok: false, reason: "cycle", cycles: order.cycles };
+  if (order.cycles.length > 0) {
+    log(`제안 · ${label} · 순환 선 ${order.cycles.length}개라 돌지 않는다`);
+    return { ok: false, reason: "cycle", cycles: order.cycles };
+  }
 
   const prompt = buildPrompt(issues, repos, deps, order);
   const hash = inputHash(issues, deps);
+  log(`제안 · ${label} · 이슈 ${orderable(issues).length}개 · 입력 ${comma(prompt.length)}자`);
   let packages: Package[] | null = null;
   let cost = 0;
   for (let attempt = 0; attempt < 2 && packages === null; attempt++) {
+    const next = attempt === 0 ? "다시 묻는다" : "그만 묻는다";
     try {
-      const r = await proposer(prompt, PROPOSAL_SCHEMA);
+      const r = await proposer(prompt, PROPOSAL_SCHEMA, log);
       cost += r.cost_usd;
       packages = parsePackages(r.output);
-    } catch {
-      packages = null;
+      if (packages === null) log(`출력이 패키지 모양이 아니다 · ${next}`);
+    } catch (e) {
+      log(`claude 실패 · ${(e as Error).message} · ${next}`);
     }
   }
   const base = { order: order.order, cycles: [], promotions: order.promotions, cost_usd: cost };
   if (packages === null) {
-    return { ok: true, proposal: save(db, hash, { status: "none", packages: [], warnings: [], ...base }) };
+    const saved = save(db, repo_id, hash, { status: "none", packages: [], warnings: [], ...base });
+    log(`제안 없음 · 후보 순서만 저장 · 제안 #${saved.id} · 합계 ${cost.toFixed(2)} USD`);
+    return { ok: true, proposal: saved };
   }
   const warnings = checkPackages(packages, issues, deps);
-  return { ok: true, proposal: save(db, hash, { status: "ok", packages, warnings, ...base }) };
+  log(`검증 · 패키지 ${packages.length} · 경고 ${warnings.length}`);
+  const saved = save(db, repo_id, hash, { status: "ok", packages, warnings, ...base });
+  log(`저장 · 제안 #${saved.id} · 합계 ${cost.toFixed(2)} USD`);
+  return { ok: true, proposal: saved };
 }
 
-export function latestProposal(db: Database): Proposal | null {
-  const row = db.query<{ id: number; created_at: string; output: string }, []>("select id, created_at, output from proposals order by id desc limit 1").get();
+export function latestProposal(db: Database, repo_id: number): Proposal | null {
+  const row = db
+    .query<{ id: number; created_at: string; output: string }, [number]>("select id, created_at, output from proposals where repo_id = ? order by id desc limit 1")
+    .get(repo_id);
   if (!row) return null;
-  return { ...(JSON.parse(row.output) as Omit<Proposal, "id" | "created_at">), id: row.id, created_at: row.created_at };
+  return { ...(JSON.parse(row.output) as ProposalBody), id: row.id, repo_id, created_at: row.created_at };
 }

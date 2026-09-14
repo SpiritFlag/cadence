@@ -15,14 +15,14 @@ export const api = {
   repos: () => call<Repo[]>("/api/repos"),
   addRepo: (full: string) => call<Repo>("/api/repos", { method: "POST", body: JSON.stringify({ full }) }),
   sync: () => call<Record<string, number>>("/api/sync", { method: "POST" }),
-  issues: () => call<Issue[]>("/api/issues?state=open"),
-  deps: () => call<Dep[]>("/api/deps"),
+  issues: (repo: number) => call<Issue[]>(`/api/issues?state=open&repo=${repo}`),
+  deps: (repo: number) => call<Dep[]>(`/api/deps?repo=${repo}`),
   addDep: (blocker_id: number, blocked_id: number) =>
     call<Dep>("/api/deps", { method: "POST", body: JSON.stringify({ blocker_id, blocked_id }) }),
   removeDep: (blocker_id: number, blocked_id: number) =>
     call<void>(`/api/deps/${blocker_id}/${blocked_id}`, { method: "DELETE" }),
-  latestProposal: () => call<Proposal | null>("/api/proposals/latest"),
-  propose: () => call<Proposal>("/api/propose", { method: "POST" }),
+  latestProposal: (repo: number) => call<Proposal | null>(`/api/proposals/latest?repo=${repo}`),
+  propose: (repo_id: number) => call<Proposal>("/api/propose", { method: "POST", body: JSON.stringify({ repo_id }) }),
   apply: (changes: ApplyChange[]) =>
     call<{ outcomes: ApplyOutcome[]; synced: Record<string, number> | null }>("/api/apply", { method: "POST", body: JSON.stringify({ changes }) }),
 };

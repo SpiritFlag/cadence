@@ -32,6 +32,25 @@ test("없는 이슈는 거부한다", () => {
   expect(() => addDep(db, 1, 99)).toThrow("없는 이슈");
 });
 
+test("다른 레포의 이슈끼리는 거부한다", () => {
+  db.run("insert into repos (owner, name) values ('a', 'c')");
+  db.run("insert into issues (repo_id, number, title, state, updated_at, synced_at) values (2, 1, 'x', 'open', 'x', 'x')"); // id 4
+  expect(() => addDep(db, 1, 4)).toThrow("다른 레포");
+  expect(listDeps(db)).toEqual([]);
+});
+
+test("레포를 주면 양 끝이 그 레포인 선만 준다", () => {
+  db.run("insert into repos (owner, name) values ('a', 'c')");
+  for (const n of [1, 2]) {
+    db.run("insert into issues (repo_id, number, title, state, updated_at, synced_at) values (2, ?, 'x', 'open', 'x', 'x')", [n]); // id 4, 5
+  }
+  addDep(db, 1, 2);
+  addDep(db, 4, 5);
+  const pairs = (repo: number) => listDeps(db, repo).map((d) => [d.blocker_id, d.blocked_id]);
+  expect(pairs(1)).toEqual([[1, 2]]);
+  expect(pairs(2)).toEqual([[4, 5]]);
+});
+
 test("지우면 사라지고, 없는 것을 지우면 false", () => {
   addDep(db, 1, 2);
   expect(removeDep(db, 1, 2)).toBe(true);
