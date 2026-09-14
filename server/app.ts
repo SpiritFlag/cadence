@@ -3,9 +3,9 @@ import { serveStatic } from "hono/bun";
 import { streamSSE } from "hono/streaming";
 import type { Database } from "bun:sqlite";
 import { openDb } from "./db";
-import { ghListIssues, ghLabels, type GhLabels, type IssueSource } from "./github/gh";
+import { ghListIssues, ghListMilestones, ghLabels, type GhLabels, type IssueSource, type MilestoneSource } from "./github/gh";
 import { applyChanges, type ApplyChange } from "./apply";
-import { addRepo, listIssues, listRepos, syncAll } from "./sync";
+import { addRepo, listIssues, listMilestones, listRepos, syncAll } from "./sync";
 import { addDep, listDeps, removeDep } from "./deps";
 import { claudeProposer, type Proposer } from "./llm/claude";
 import { latestProposal, propose } from "./propose";
@@ -14,11 +14,12 @@ import { createLogBus, type LogBus, type LogLine } from "./log";
 /** 로그 SSE 핑 간격. 서버 유휴 제한(240초)보다 짧아야 연결이 안 끊긴다. */
 const LOG_PING_MS = 30_000;
 
-export type AppDeps = { db?: Database; source?: IssueSource; proposer?: Proposer; labels?: GhLabels; logs?: LogBus };
+export type AppDeps = { db?: Database; source?: IssueSource; milestones?: MilestoneSource; proposer?: Proposer; labels?: GhLabels; logs?: LogBus };
 
 export function createApp(deps: AppDeps = {}) {
   const db = deps.db ?? openDb();
   const source = deps.source ?? ghListIssues;
+  const milestones = deps.milestones ?? ghListMilestones;
   const proposer = deps.proposer ?? claudeProposer;
   const labels = deps.labels ?? ghLabels;
   const logs = deps.logs ?? createLogBus();
@@ -43,7 +44,7 @@ export function createApp(deps: AppDeps = {}) {
 
   app.post("/api/sync", async (c) => {
     try {
-      return c.json(await syncAll(db, source));
+      return c.json(await syncAll(db, source, milestones));
     } catch (e) {
       return c.json({ error: (e as Error).message }, 502);
     }
@@ -60,6 +61,11 @@ export function createApp(deps: AppDeps = {}) {
       opts.repo_id = r.id;
     }
     return c.json(listIssues(db, opts));
+  });
+
+  app.get("/api/milestones", (c) => {
+    const r = findRepo(c.req.query("repo"));
+    return r ? c.json(listMilestones(db, r.id)) : c.json(NO_REPO, 400);
   });
 
   app.get("/api/deps", (c) => {
@@ -120,7 +126,7 @@ export function createApp(deps: AppDeps = {}) {
     if (!Array.isArray(changes)) return c.json({ error: "changes가 필요하다" }, 400);
     const outcomes = await applyChanges(db, changes, labels);
     // 성공한 건이 있으면 다시 가져와 로컬 라벨을 맞춘다.
-    const synced = outcomes.some((o) => o.status === "applied") ? await syncAll(db, source) : null;
+    const synced = outcomes.some((o) => o.status === "applied") ? await syncAll(db, source, milestones) : null;
     return c.json({ outcomes, synced });
   });
 

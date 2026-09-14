@@ -28,6 +28,14 @@ test("hold와 닫힌 이슈는 순서에 없다", () => {
   expect(r.promotions).toEqual([]);
 });
 
+test("마일스톤이 붙은 열린 이슈는 진행 중이라 순서 · 승격 · 패키지 검사에서 빠진다", () => {
+  const issues = [is(1, ["p3"]), { ...is(2, ["p1"]), milestone_number: 5 }, is(3, ["p2"])];
+  const r = candidateOrder(issues, [e(1, 2)]);
+  expect(r.order).toEqual([3, 1]);
+  expect(r.promotions).toEqual([]);
+  expect(checkPackages([{ rank: 1, issue_ids: [2] }], issues, []).map((w) => w.kind)).toEqual(["unknown"]);
+});
+
 test("순환이 있으면 순서가 없고 순환 선이 온다", () => {
   const r = candidateOrder([is(1), is(2)], [e(1, 2), e(2, 1)]);
   expect(r.order).toEqual([]);
@@ -54,7 +62,7 @@ test("승격된 우선순위로 순서를 매긴다", () => {
   expect(r.order).toEqual([1, 3, 4]);
 });
 
-test("패키지 검사: 크기 · 사슬 · 누락 · 중복 · 모르는 이슈", () => {
+test("패키지 검사: 크기 · 사슬 · 중복 · 모르는 이슈", () => {
   const issues = [is(1), is(2), is(3), is(4), is(5), is(6), is(7), is(8, ["hold"])];
   const deps = [e(1, 2)];
   const w = checkPackages(
@@ -70,9 +78,15 @@ test("패키지 검사: 크기 · 사슬 · 누락 · 중복 · 모르는 이슈
   expect(w.find((x) => x.kind === "size")?.rank).toBe(1);
 });
 
-test("패키지 검사: 빠진 이슈는 rank null", () => {
+test("패키지 검사: 패키지에 안 든 이슈는 대기라 경고가 없다", () => {
   const w = checkPackages([{ rank: 1, issue_ids: [1] }], [is(1), is(2), is(3, ["hold"])], []);
-  expect(w).toEqual([{ rank: null, kind: "missing", message: "#2가 어느 패키지에도 없음" }]);
+  expect(w).toEqual([]);
+});
+
+test("패키지 검사: 막는 이슈가 어느 패키지에도 없으면 사슬 경고. hold · 닫힌 막는 쪽은 빼고 본다", () => {
+  const issues = [is(1), is(2), is(3, ["hold"]), is(4, [], "closed"), is(5)];
+  const w = checkPackages([{ rank: 1, issue_ids: [2, 5] }], issues, [e(1, 2), e(3, 5), e(4, 5)]);
+  expect(w).toEqual([{ rank: 1, kind: "chain", message: "#2를 막는 #1가 어느 패키지에도 없음" }]);
 });
 
 test("패키지 검사: 제대로면 경고가 없다", () => {

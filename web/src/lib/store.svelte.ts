@@ -1,4 +1,4 @@
-import type { Issue, Repo } from "../../../server/sync";
+import type { Issue, Milestone, Repo } from "../../../server/sync";
 import type { Dep } from "../../../server/deps";
 import type { Proposal, LabelChange } from "../../../server/propose";
 import type { ApplyOutcome } from "../../../server/apply";
@@ -11,6 +11,8 @@ export const store = $state({
   repoId: null as number | null,
   issues: [] as Issue[],
   deps: [] as Dep[],
+  /** 고른 레포의 마일스톤. 번호순, 닫힌 것 포함. */
+  milestones: [] as Milestone[],
   selected: null as Issue | null,
   proposal: null as Proposal | null,
   /** 패키지 카드에 마우스를 올렸을 때 강조할 이슈 id */
@@ -63,10 +65,12 @@ async function reload() {
   store.repoId = store.repos.find((r) => r.id === want)?.id ?? store.repos[0]?.id ?? null;
   saveRepo(store.repoId);
   if (store.repoId === null) {
-    [store.issues, store.deps, store.proposal] = [[], [], null];
+    [store.issues, store.deps, store.proposal, store.milestones] = [[], [], null, []];
   } else {
     const repo = store.repoId;
-    [store.issues, store.deps, store.proposal] = await Promise.all([api.issues(repo), api.deps(repo), api.latestProposal(repo)]);
+    [store.issues, store.deps, store.proposal, store.milestones] = await Promise.all([
+      api.issues(repo), api.deps(repo), api.latestProposal(repo), api.milestones(repo),
+    ]);
   }
   if (store.selected) store.selected = store.issues.find((i) => i.id === store.selected!.id) ?? null;
 }

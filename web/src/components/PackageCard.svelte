@@ -6,6 +6,9 @@
 
   let { pkg, warnings }: { pkg: Package; warnings: PackageWarning[] } = $props();
   const issues = $derived(pkg.issue_ids.map((id) => issueById(id)).filter((i) => !!i));
+  const num = (id: number) => `#${issueById(id)?.number ?? id}`;
+  // 표시는 서버가 직전 제안과 비교해 붙인 것. 이어간 제안에만 있다.
+  const marks = $derived(pkg.marks);
 </script>
 
 <div
@@ -17,6 +20,9 @@
   <div class="head">
     <span class="rank">{pkg.rank}</span>
     <strong class="name">{pkg.name}</strong>
+    {#if marks && marks.overtake !== null}<span class="mark overtake" title="새 · 바뀐 이슈로 유지 패키지를 앞질렀다">앞지름</span>{/if}
+    {#if marks && marks.joined.length > 0}<span class="mark joined" title="새 이슈가 유지 패키지에 들어왔다">＋합류 {marks.joined.map(num).join(" ")}</span>{/if}
+    {#if marks?.moved_by_deps}<span class="mark deps" title="의존 선 때문에 순서가 옮겨졌다">선 때문에 이동</span>{/if}
   </div>
   <div class="issues">
     {#each issues as i (i.id)}
@@ -29,6 +35,7 @@
     {/each}
   </div>
   <p class="reason">{pkg.reason}</p>
+  {#if marks?.overtake}<p class="overtake-reason">앞지른 이유 · {marks.overtake}</p>{/if}
   {#if pkg.label_changes.length > 0}
     <ul class="changes">
       {#each pkg.label_changes as c (c.issue_id)}
@@ -52,7 +59,11 @@
 <style>
   .card { padding: 10px 12px; border: 1px solid #8886; border-radius: 8px; margin-bottom: 8px; }
   .card:hover { border-color: #fbca04; }
-  .head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 6px; }
+  .mark { padding: 0 7px; border-radius: 10px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+  .mark.overtake { background: #d73a4a22; color: #d73a4a; }
+  .mark.joined { background: #0e8a1622; color: #0e8a16; }
+  .mark.deps { background: #8884; }
   .rank { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: #4a90e2; color: #fff; font-size: 12px; font-weight: 700; }
   .name { font-size: 13px; }
   .issues { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
@@ -61,6 +72,7 @@
   .chip.selected { border-color: #4a90e2; }
   .chip.missing { color: #d73a4a; cursor: default; }
   .reason { margin: 0 0 6px; font-size: 12px; color: #888; line-height: 1.4; }
+  .overtake-reason { margin: -2px 0 6px; font-size: 12px; color: #d73a4a; line-height: 1.4; }
   .changes, .warnings { margin: 0; padding-left: 4px; list-style: none; font-size: 12px; }
   .changes li { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
   .changes li.rejected { opacity: 0.5; }

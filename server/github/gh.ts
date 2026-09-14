@@ -8,10 +8,28 @@ export type GhIssue = {
   labels: { name: string }[];
   updatedAt: string;
   closedAt: string | null;
+  /** 붙은 마일스톤. 없으면 null. 가짜 원천은 생략해도 된다. */
+  milestone?: { number: number; title: string } | null;
 };
 
 /** 이슈 원천. 테스트는 가짜를 끼운다. */
 export type IssueSource = (owner: string, name: string) => Promise<GhIssue[]>;
+
+export type GhMilestone = {
+  number: number;
+  title: string;
+  state: "open" | "closed";
+  created_at: string;
+  closed_at: string | null;
+};
+
+/** 마일스톤 원천. gh에 마일스톤 목록 명령이 없어 `gh api` GET으로 읽는다. */
+export type MilestoneSource = (owner: string, name: string) => Promise<GhMilestone[]>;
+
+export const ghListMilestones: MilestoneSource = async (owner, name) => {
+  const out = await run(["api", "--paginate", "--slurp", `repos/${owner}/${name}/milestones?state=all&per_page=100`]);
+  return (JSON.parse(out) as GhMilestone[][]).flat();
+};
 
 export const ghListIssues: IssueSource = async (owner, name) => {
   const proc = Bun.spawn(
@@ -20,7 +38,7 @@ export const ghListIssues: IssueSource = async (owner, name) => {
       "--repo", `${owner}/${name}`,
       "--state", "all",
       "--limit", "1000",
-      "--json", "number,title,body,state,labels,updatedAt,closedAt",
+      "--json", "number,title,body,state,labels,updatedAt,closedAt,milestone",
     ],
     { stdout: "pipe", stderr: "pipe" },
   );

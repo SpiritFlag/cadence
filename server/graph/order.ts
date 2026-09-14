@@ -6,7 +6,7 @@ export const PRIORITIES: Priority[] = ["p1", "p2", "p3"];
 const RANK: Record<Priority, number> = { p1: 1, p2: 2, p3: 3 };
 
 /** 순서에 필요한 최소 이슈 모양. sync의 Issue가 그대로 맞는다. */
-export type OrderIssue = { id: number; number: number; labels: string[]; state: "open" | "closed" };
+export type OrderIssue = { id: number; number: number; labels: string[]; state: "open" | "closed"; milestone_number?: number | null };
 
 export type Promotion = { issue_id: number; from: Priority; to: Priority };
 
@@ -28,9 +28,12 @@ export function priorityOf(labels: string[]): Priority {
 
 export const isHold = (labels: string[]) => labels.includes("hold");
 
-/** 순서에 드는 이슈: 열려 있고 hold가 아닌 것. */
+/** 마일스톤이 붙은 열린 이슈는 사이클에 들어가 진행 중이다. */
+export const inProgress = (i: OrderIssue) => i.state === "open" && (i.milestone_number ?? null) !== null;
+
+/** 순서에 드는 이슈: 열려 있고 hold가 아니고 진행 중이 아닌 것. */
 export function orderable<T extends OrderIssue>(issues: T[]): T[] {
-  return issues.filter((i) => i.state === "open" && !isHold(i.labels));
+  return issues.filter((i) => i.state === "open" && !isHold(i.labels) && !inProgress(i));
 }
 
 export function candidateOrder(issues: OrderIssue[], deps: Edge[]): CandidateOrder {
@@ -100,13 +103,13 @@ export const PACKAGE_MAX = 5;
 export type PackageLike = { rank: number; issue_ids: number[] };
 
 export type PackageWarning = {
-  /** 어느 패키지에 붙는 경고인가. 패키지 밖 문제면 null. */
+  /** 어느 패키지에 붙는 경고인가. 붙일 패키지가 없으면 null. */
   rank: number | null;
-  kind: "size" | "chain" | "missing" | "duplicate" | "unknown";
+  kind: "size" | "chain" | "duplicate" | "unknown" | "carry";
   message: string;
 };
 
-/** 사슬 보존 · 이슈 누락 · 크기 상한을 검사한다. LLM 출력을 믿지 않는다. */
+/** 사슬 보존 · 크기 상한 · 중복 · 모르는 이슈를 검사한다. 패키지에 안 든 이슈는 대기라 경고하지 않는다. LLM 출력을 믿지 않는다. */
 export function checkPackages(packages: PackageLike[], issues: OrderIssue[], deps: Edge[]): PackageWarning[] {
   const warnings: PackageWarning[] = [];
   const expected = new Set(orderable(issues).map((i) => i.id));
@@ -130,13 +133,14 @@ export function checkPackages(packages: PackageLike[], issues: OrderIssue[], dep
       where.set(id, p.rank);
     }
   }
-  for (const id of expected) {
-    if (!where.has(id)) warnings.push({ rank: null, kind: "missing", message: `${num(id)}가 어느 패키지에도 없음` });
-  }
   for (const e of deps) {
     const a = where.get(e.blocker_id);
     const b = where.get(e.blocked_id);
-    if (a !== undefined && b !== undefined && a > b) {
+    if (b === undefined) continue;
+    // 막는 쪽이 순서에 드는데 어느 패키지에도 없으면 사슬이 끊긴 것이다. 닫힌 · hold 막는 쪽은 순서에 없다.
+    if (a === undefined && expected.has(e.blocker_id)) {
+      warnings.push({ rank: b, kind: "chain", message: `${num(e.blocked_id)}를 막는 ${num(e.blocker_id)}가 어느 패키지에도 없음` });
+    } else if (a !== undefined && a > b) {
       warnings.push({ rank: b, kind: "chain", message: `${num(e.blocked_id)}를 막는 ${num(e.blocker_id)}가 ${a}순위에 있음` });
     }
   }
