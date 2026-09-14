@@ -2,6 +2,7 @@ import type { Issue, Milestone, Repo } from "../../../server/sync";
 import type { Dep } from "../../../server/deps";
 import type { Proposal } from "../../../server/propose";
 import type { ApplyChange, ApplyOutcome } from "../../../server/apply";
+import type { GraphState } from "../../../server/graphgen";
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, { headers: { "content-type": "application/json" }, ...init });
@@ -24,6 +25,8 @@ export const api = {
     call<void>(`/api/deps/${blocker_id}/${blocked_id}`, { method: "DELETE" }),
   latestProposal: (repo: number) => call<Proposal | null>(`/api/proposals/latest?repo=${repo}`),
   propose: (repo_id: number) => call<Proposal>("/api/propose", { method: "POST", body: JSON.stringify({ repo_id }) }),
+  graph: (repo: number) => call<GraphState>(`/api/graph/latest?repo=${repo}`),
+  generateGraph: (repo_id: number) => call<GraphState>("/api/graph/generate", { method: "POST", body: JSON.stringify({ repo_id }) }),
   apply: (changes: ApplyChange[]) =>
     call<{ outcomes: ApplyOutcome[]; synced: Record<string, number> | null }>("/api/apply", { method: "POST", body: JSON.stringify({ changes }) }),
 };

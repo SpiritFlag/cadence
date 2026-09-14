@@ -2,6 +2,7 @@ import type { Issue, Milestone, Repo } from "../../../server/sync";
 import type { Dep } from "../../../server/deps";
 import type { Proposal, LabelChange } from "../../../server/propose";
 import type { ApplyOutcome } from "../../../server/apply";
+import type { GraphState } from "../../../server/graphgen";
 import { cycleEdges } from "../../../server/graph/cycle";
 import { api } from "./api";
 
@@ -13,6 +14,8 @@ export const store = $state({
   deps: [] as Dep[],
   /** 고른 레포의 마일스톤. 번호순, 닫힌 것 포함. */
   milestones: [] as Milestone[],
+  /** 고른 레포의 마지막 그래프 생성 결과와 승인을 기다리는 선 제안. */
+  graph: null as GraphState | null,
   selected: null as Issue | null,
   proposal: null as Proposal | null,
   /** 패키지 카드에 마우스를 올렸을 때 강조할 이슈 id */
@@ -22,6 +25,7 @@ export const store = $state({
   applyResult: null as ApplyOutcome[] | null,
   busy: false,
   proposing: false,
+  generating: false,
   applying: false,
   error: null as string | null,
 });
@@ -65,11 +69,11 @@ async function reload() {
   store.repoId = store.repos.find((r) => r.id === want)?.id ?? store.repos[0]?.id ?? null;
   saveRepo(store.repoId);
   if (store.repoId === null) {
-    [store.issues, store.deps, store.proposal, store.milestones] = [[], [], null, []];
+    [store.issues, store.deps, store.proposal, store.milestones, store.graph] = [[], [], null, [], null];
   } else {
     const repo = store.repoId;
-    [store.issues, store.deps, store.proposal, store.milestones] = await Promise.all([
-      api.issues(repo), api.deps(repo), api.latestProposal(repo), api.milestones(repo),
+    [store.issues, store.deps, store.proposal, store.milestones, store.graph] = await Promise.all([
+      api.issues(repo), api.deps(repo), api.latestProposal(repo), api.milestones(repo), api.graph(repo),
     ]);
   }
   if (store.selected) store.selected = store.issues.find((i) => i.id === store.selected!.id) ?? null;
@@ -143,6 +147,11 @@ export function issueById(id: number): Issue | undefined {
   return store.issues.find((i) => i.id === id);
 }
 
+/** 선 하나. 출처 · 이유를 볼 때. */
+export function depOf(blocker_id: number, blocked_id: number): Dep | undefined {
+  return store.deps.find((d) => d.blocker_id === blocker_id && d.blocked_id === blocked_id);
+}
+
 /** 이 이슈를 막는 이슈들. */
 export function blockersOf(id: number): Issue[] {
   return store.deps.filter((d) => d.blocked_id === id).map((d) => issueById(d.blocker_id)).filter((i): i is Issue => !!i);
@@ -175,6 +184,24 @@ export async function runPropose() {
     store.error = (e as Error).message;
   } finally {
     store.proposing = false;
+  }
+}
+
+/** [그래프 생성]. claude가 고른 레포의 선을 갈아끼운다. 30초쯤 걸린다. */
+export async function runGenerate() {
+  if (store.repoId === null) return;
+  const repo = store.repoId;
+  store.generating = true;
+  store.error = null;
+  try {
+    const graph = await api.generateGraph(repo);
+    if (store.repoId !== repo) return;
+    store.graph = graph;
+    store.deps = await api.deps(repo);
+  } catch (e) {
+    store.error = (e as Error).message;
+  } finally {
+    store.generating = false;
   }
 }
 

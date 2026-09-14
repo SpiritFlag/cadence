@@ -1,7 +1,9 @@
 <script lang="ts">
-  import { store, addRepo, refresh, runPropose, cycleCount, selectRepo } from "../lib/store.svelte";
+  import { store, addRepo, refresh, runPropose, runGenerate, cycleCount, selectRepo } from "../lib/store.svelte";
 
   const cycles = $derived(cycleCount());
+  /** 동기화 · 제안 · 생성 중에는 서로 막는다. */
+  const locked = $derived(store.busy || store.proposing || store.generating);
 
   let full = $state("");
 
@@ -22,7 +24,7 @@
         class="chip"
         class:on={r.id === store.repoId}
         onclick={() => selectRepo(r.id)}
-        disabled={store.busy || store.proposing}
+        disabled={locked}
         title="이 레포만 본다"
       >{r.owner}/{r.name}</button>
     {/each}
@@ -33,11 +35,16 @@
   </div>
   <div class="actions">
     {#if store.error}<span class="error">{store.error}</span>{/if}
-    <button onclick={refresh} disabled={store.busy || store.proposing}>{store.busy ? "…" : "새로고침"}</button>
+    <button onclick={refresh} disabled={locked}>{store.busy ? "…" : "새로고침"}</button>
+    <button
+      onclick={runGenerate}
+      disabled={locked || store.issues.length === 0}
+      title="claude가 열린 이슈를 읽고 선을 긋는다. 사용자 선은 지우지 않는다. 30초쯤 걸린다"
+    >{store.generating ? "생성 중…" : "그래프 생성"}</button>
     <button
       class="primary"
       onclick={runPropose}
-      disabled={store.busy || store.proposing || store.issues.length === 0 || cycles > 0}
+      disabled={locked || store.issues.length === 0 || cycles > 0}
       title={cycles > 0 ? `순환에 걸린 선이 ${cycles}개 있어 제안하지 않는다` : "claude가 패키지를 제안한다. 몇 초 걸린다"}
     >{store.proposing ? "제안 중…" : "제안"}</button>
   </div>
