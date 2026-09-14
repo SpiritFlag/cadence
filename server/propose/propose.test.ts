@@ -88,6 +88,34 @@ test("고른 레포의 이슈만 프롬프트에 들어가고, 최근 제안은 
   expect(latestProposal(db, other.id)).toBeNull();
 });
 
+const onePackage = { packages: [{ rank: 1, name: "전부", issue_ids: [1, 2, 3], reason: "r", label_changes: [] }] };
+
+test("제안 한 번에 로그가 입력 → 시작 → 응답 끝 → 검증 → 저장 순서로 쌓인다", async () => {
+  const lines: string[] = [];
+  const proposer: Proposer = async (_p, _s, log) => {
+    log("claude 시작 · 모델 claude-opus-5");
+    log("응답 끝 · 0.10 USD · 3.0초");
+    return { output: onePackage, cost_usd: 0.1 };
+  };
+  const r = await propose(db, 1, ...ctx(), proposer, (t) => lines.push(t));
+  if (!r.ok) throw new Error();
+  expect(lines.map((l) => l.split(" · ")[0])).toEqual(["제안", "claude 시작", "응답 끝", "검증", "저장"]);
+  expect(lines[0]).toContain("a/b · 이슈 3개 · 입력");
+  expect(lines[4]).toBe(`저장 · 제안 #${r.proposal.id} · 합계 0.10 USD`);
+});
+
+test("재시도하면 실패 줄이 남는다", async () => {
+  const lines: string[] = [];
+  let calls = 0;
+  const proposer: Proposer = async () => {
+    if (++calls === 1) throw new Error("터짐");
+    return { output: onePackage, cost_usd: 0 };
+  };
+  await propose(db, 1, ...ctx(), proposer, (t) => lines.push(t));
+  expect(lines).toContain("claude 실패 · 터짐 · 다시 묻는다");
+  expect(lines.at(-1)).toStartWith("저장");
+});
+
 test("순환이 있으면 proposer를 부르지 않는다", async () => {
   addDep(db, 2, 1);
   let calls = 0;

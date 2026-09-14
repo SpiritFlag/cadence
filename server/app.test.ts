@@ -2,6 +2,7 @@ import { test, expect } from "bun:test";
 import { createApp } from "./app";
 import { openDb } from "./db";
 import type { GhIssue } from "./github/gh";
+import { createLogBus } from "./log";
 
 const fake: GhIssue[] = [
   { number: 1, title: "t1", body: "", state: "OPEN", labels: [{ name: "p1" }], updatedAt: "x", closedAt: null },
@@ -46,6 +47,7 @@ test("레포를 고르면 그 레포의 이슈 · 선 · 제안만", async () =>
     db: openDb(":memory:"),
     source: async (_owner, name) => (name === "b" ? [fake[0]!, { ...fake[0]!, number: 2 }] : [{ ...fake[0]!, number: 7 }]),
     proposer: async () => ({ output: { packages: [] }, cost_usd: 0 }),
+    logs: createLogBus({ print: () => {} }),
   });
   const json = (path: string, method: string, body?: unknown) =>
     app.request(path, { method, headers: { "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined });

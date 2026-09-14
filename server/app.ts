@@ -8,14 +8,16 @@ import { addRepo, listIssues, listRepos, syncAll } from "./sync";
 import { addDep, listDeps, removeDep } from "./deps";
 import { claudeProposer, type Proposer } from "./llm/claude";
 import { latestProposal, propose } from "./propose";
+import { createLogBus, type LogBus } from "./log";
 
-export type AppDeps = { db?: Database; source?: IssueSource; proposer?: Proposer; labels?: GhLabels };
+export type AppDeps = { db?: Database; source?: IssueSource; proposer?: Proposer; labels?: GhLabels; logs?: LogBus };
 
 export function createApp(deps: AppDeps = {}) {
   const db = deps.db ?? openDb();
   const source = deps.source ?? ghListIssues;
   const proposer = deps.proposer ?? claudeProposer;
   const labels = deps.labels ?? ghLabels;
+  const logs = deps.logs ?? createLogBus();
   const app = new Hono();
 
   /** 등록된 레포 id면 그 레포, 아니면 null. */
@@ -86,7 +88,7 @@ export function createApp(deps: AppDeps = {}) {
     const { repo_id } = (await c.req.json().catch(() => ({}))) as { repo_id?: number };
     const repo = findRepo(repo_id);
     if (!repo) return c.json(NO_REPO, 400);
-    const r = await propose(db, repo.id, listIssues(db, { state: "open", repo_id: repo.id }), listRepos(db), listDeps(db, repo.id), proposer);
+    const r = await propose(db, repo.id, listIssues(db, { state: "open", repo_id: repo.id }), listRepos(db), listDeps(db, repo.id), proposer, logs.log);
     if (!r.ok) return c.json({ error: "순환이 있어 제안하지 않는다", cycles: r.cycles }, 409);
     return c.json(r.proposal);
   });
