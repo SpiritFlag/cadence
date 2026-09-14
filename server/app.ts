@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
+import { streamSSE } from "hono/streaming";
 import type { Database } from "bun:sqlite";
 import { openDb } from "./db";
 import { ghListIssues, ghLabels, type GhLabels, type IssueSource } from "./github/gh";
@@ -8,7 +9,10 @@ import { addRepo, listIssues, listRepos, syncAll } from "./sync";
 import { addDep, listDeps, removeDep } from "./deps";
 import { claudeProposer, type Proposer } from "./llm/claude";
 import { latestProposal, propose } from "./propose";
-import { createLogBus, type LogBus } from "./log";
+import { createLogBus, type LogBus, type LogLine } from "./log";
+
+/** 로그 SSE 핑 간격. 서버 유휴 제한(240초)보다 짧아야 연결이 안 끊긴다. */
+const LOG_PING_MS = 30_000;
 
 export type AppDeps = { db?: Database; source?: IssueSource; proposer?: Proposer; labels?: GhLabels; logs?: LogBus };
 
@@ -92,6 +96,24 @@ export function createApp(deps: AppDeps = {}) {
     if (!r.ok) return c.json({ error: "순환이 있어 제안하지 않는다", cycles: r.cycles }, 409);
     return c.json(r.proposal);
   });
+
+  // 로그 줄을 SSE로 흘린다. 열면 최근 줄부터 주고, 이후 줄은 생기는 대로.
+  app.get("/api/logs", (c) =>
+    streamSSE(c, async (stream) => {
+      const send = (line: LogLine) => void stream.writeSSE({ event: "line", data: JSON.stringify(line) });
+      // 본문이 한 조각도 없으면 Vite 프록시가 헤더를 붙잡아 연결이 안 열린다. 핑부터 보낸다.
+      void stream.writeSSE({ event: "ping", data: "" });
+      // 최근 줄 보내기와 구독은 같은 틱이라 그 사이에 줄이 끼지 않는다.
+      for (const line of logs.recent()) send(line);
+      const stop = logs.subscribe(send);
+      stream.onAbort(stop);
+      while (!stream.aborted) {
+        await stream.sleep(LOG_PING_MS);
+        if (!stream.aborted) await stream.writeSSE({ event: "ping", data: "" });
+      }
+      stop();
+    }),
+  );
 
   app.post("/api/apply", async (c) => {
     const { changes } = (await c.req.json()) as { changes?: ApplyChange[] };
