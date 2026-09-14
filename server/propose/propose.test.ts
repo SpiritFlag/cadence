@@ -33,6 +33,9 @@ test("프롬프트에 규칙 · 후보 순서 · 승격 · 선 · 이슈 본문�
   expect(p).not.toContain("#4"); // hold는 없다
   expect(p).toContain("패키지는 5개까지다");
   expect(PROPOSAL_SCHEMA.properties.packages.maxItems).toBe(5);
+  expect(PROPOSAL_SCHEMA.properties.packages.items.required).toContain("keep");
+  expect(PROPOSAL_SCHEMA.properties.packages.items.required).toContain("overtake_reason");
+  expect(p).not.toContain("## 직전 제안에서 이어지는 것"); // carry를 안 주면 이어가기 절이 없다
 });
 
 test("패키지가 5개를 넘으면 순위 앞 5개만 저장하고 로그에 남긴다", async () => {
@@ -51,7 +54,7 @@ test("패키지에 안 든 이슈는 경고가 없고, 막는 이슈가 밖이�
   expect(waiting.proposal.warnings).toEqual([]);
   const cut = await propose(db, 1, ...ctx(), only([2])); // 2를 막는 1이 밖
   if (!cut.ok) throw new Error();
-  expect(cut.proposal.warnings).toEqual([{ rank: 1, kind: "chain", message: "#2를 막는 #1가 어느 패키지에도 없음" }]);
+  expect(cut.proposal.warnings.filter((w) => w.kind === "chain")).toEqual([{ rank: 1, kind: "chain", message: "#2를 막는 #1가 어느 패키지에도 없음" }]);
 });
 
 test("제안을 받아 검증하고 저장한다. 어기면 경고가 붙는다", async () => {
@@ -120,9 +123,9 @@ test("제안 한 번에 로그가 입력 → 시작 → 응답 끝 → 검증 �
   };
   const r = await propose(db, 1, ...ctx(), proposer, (t) => lines.push(t));
   if (!r.ok) throw new Error();
-  expect(lines.map((l) => l.split(" · ")[0])).toEqual(["제안", "claude 시작", "응답 끝", "검증", "저장"]);
+  expect(lines.map((l) => l.split(" · ")[0])).toEqual(["제안", "이어가기 없음", "claude 시작", "응답 끝", "검증", "저장"]);
   expect(lines[0]).toContain("a/b · 이슈 3개 · 입력");
-  expect(lines[4]).toBe(`저장 · 제안 #${r.proposal.id} · 합계 0.10 USD`);
+  expect(lines[5]).toBe(`저장 · 제안 #${r.proposal.id} · 합계 0.10 USD`);
 });
 
 test("재시도하면 실패 줄이 남는다", async () => {
@@ -145,4 +148,70 @@ test("순환이 있으면 proposer를 부르지 않는다", async () => {
   expect(r.ok).toBe(false);
   if (!r.ok) expect(r.cycles).toHaveLength(2);
   expect(latestProposal(db, 1)).toBeNull();
+});
+
+// ---- 이어가기 ----
+
+const pk = (rank: number, name: string, issue_ids: number[], keep = "", overtake_reason = "") =>
+  ({ rank, name, issue_ids, reason: `${name} 이유`, label_changes: [], keep, overtake_reason });
+
+test("첫 제안은 백지라 표시가 없고, 순서에 든 이슈의 스냅샷을 저장한다", async () => {
+  const lines: string[] = [];
+  const r = await propose(db, 1, ...ctx(), async () => ({ output: onePackage, cost_usd: 0 }), (t) => lines.push(t));
+  if (!r.ok) throw new Error();
+  expect(Object.keys(r.proposal.snapshot ?? {}).sort()).toEqual(["1", "2", "3"]); // hold 4는 없다
+  expect(r.proposal.carried_from).toBeNull();
+  expect(r.proposal.packages[0]!.marks).toBeUndefined();
+  expect(lines).toContain("이어가기 없음 · 백지에서 짠다");
+});
+
+test("직전 제안에서 이어간다: 뽑힌 패키지는 빠지고, 유지 순서 · 새 이슈가 프롬프트에 가고, 진행 중 이슈는 없고, 앞지름이 표시된다", async () => {
+  const first = await propose(db, 1, ...ctx(), async () => ({ output: { packages: [pk(1, "A", [1, 2]), pk(2, "B", [3])] }, cost_usd: 0 }));
+  if (!first.ok) throw new Error();
+
+  const v = { number: 1, title: "v0.1.0" };
+  await syncRepo(db, listRepos(db)[0]!, async () => [
+    { ...gh(1, ["p3"]), milestone: v }, { ...gh(2, ["p1"], "급하다"), milestone: v }, gh(3, ["p2"]), gh(4, ["hold"]), gh(5, ["p1"], "장애가 났다"),
+  ]);
+  let prompt = "";
+  const lines: string[] = [];
+  const r = await propose(db, 1, ...ctx(), async (p) => {
+    prompt = p;
+    return { output: { packages: [pk(1, "장애", [5], "", "장애라 급하다"), pk(2, "B", [3], "K1")] }, cost_usd: 0 };
+  }, (t) => lines.push(t));
+  if (!r.ok) throw new Error();
+
+  expect(prompt).toContain("## 직전 제안에서 이어지는 것");
+  expect(prompt).toContain("- K1 · B · 이슈 id 3 (#3)");
+  expect(prompt).toContain("### 새 이슈 (직전 제안 뒤에 생겼거나 다시 순서에 든 것)\nid 5 (#5)");
+  expect(prompt).not.toContain("### id 1 ·"); // 진행 중
+  expect(prompt).not.toContain("### id 2 ·");
+  expect(lines).toContain(`이어가기 · 제안 #${first.proposal.id}에서 · 유지 1 · 뽑힘 2 · 풀림 0 · 새 1 · 바뀐 0`);
+  expect(lines).toContain("이어가기 표시 · 앞지름 1 · 합류 0 · 선 이동 0");
+  expect(r.proposal.carried_from).toBe(first.proposal.id);
+  expect(r.proposal.packages.map((p) => p.marks)).toEqual([
+    { keep: null, overtake: "장애라 급하다", joined: [], moved_by_deps: false },
+    { keep: "K1", overtake: null, joined: [], moved_by_deps: false },
+  ]);
+  expect(r.proposal.warnings).toEqual([]);
+});
+
+test("스냅샷 없는 옛 제안이면 백지다. none 제안은 건너뛰고 마지막 ok 제안에서 이어가며 경고가 제안에 붙는다", async () => {
+  db.run("insert into proposals (repo_id, input_hash, output) values (1, 'h', ?)", [
+    JSON.stringify({ status: "ok", packages: onePackage.packages, warnings: [], order: [], cycles: [], promotions: [], cost_usd: 0 }),
+  ]);
+  let prompt = "";
+  const capture: Proposer = async (p) => { prompt = p; return { output: onePackage, cost_usd: 0 }; };
+  const old = await propose(db, 1, ...ctx(), capture);
+  if (!old.ok) throw new Error();
+  expect(prompt).not.toContain("## 직전 제안에서 이어지는 것");
+  expect(old.proposal.carried_from).toBeNull();
+
+  await propose(db, 1, ...ctx(), async () => { throw new Error("터짐"); }); // none
+  const next = await propose(db, 1, ...ctx(), capture); // 유지 키를 안 적었다
+  if (!next.ok) throw new Error();
+  expect(prompt).toContain("## 직전 제안에서 이어지는 것");
+  expect(next.proposal.carried_from).toBe(old.proposal.id);
+  expect(next.proposal.packages[0]!.marks).toEqual({ keep: null, overtake: null, joined: [], moved_by_deps: false });
+  expect(next.proposal.warnings.map((w) => w.message)).toEqual(["칸이 남는데 K1 전부가 사라짐"]);
 });
