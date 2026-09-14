@@ -5,6 +5,7 @@
   import { store, select, addDep, issueById } from "../lib/store.svelte";
   import { layoutGraph, type IssueFlowNode } from "../lib/layout";
   import IssueNode from "./IssueNode.svelte";
+  import GraphBar from "./GraphBar.svelte";
 
   const nodeTypes = { issue: IssueNode };
 
@@ -46,7 +47,8 @@
   });
 
   function onconnect(c: Connection) {
-    // 위 핸들이 target, 아래 핸들이 source. 아래에서 끌어 위로 놓으면 source가 target을 막는다.
+    // 위 핸들이 target, 아래 핸들이 source. 아래에서 끌어 위로 놓으면 source가 target을 막는다. 생성 중에는 긋지 않는다.
+    if (store.generating) return;
     addDep(Number(c.source), Number(c.target));
   }
 </script>
@@ -55,6 +57,7 @@
   {#if store.issues.length === 0}
     <p class="empty">{store.repos.length === 0 ? "위에서 레포를 추가하면 이슈가 여기 보인다." : "열린 이슈가 없다."}</p>
   {/if}
+  <GraphBar />
   <SvelteFlow
     bind:nodes
     bind:edges

@@ -6,6 +6,8 @@ import { cycleEdges, edgeKey } from "../../../server/graph/cycle";
 
 export const NODE_W = 240;
 export const NODE_H = 64;
+/** claude가 그은 선 색. 상세 칩과 같다. */
+export const CLAUDE_COLOR = "#8250df";
 
 export type IssueNodeData = { issue: Issue; [k: string]: unknown };
 export type IssueFlowNode = FlowNode<IssueNodeData, "issue">;
@@ -39,15 +41,18 @@ export function layoutGraph(issues: Issue[], deps: Dep[], selectedId: number | n
     };
   });
 
+  // 사용자 선은 회색 실선, claude 선은 보라 점선. 순환이면 빨강이 이긴다.
   const edges: FlowEdge[] = visible.map((d) => {
     const cycle = inCycle.has(edgeKey(d));
+    const claude = d.source === "claude";
+    const color = cycle ? "#d73a4a" : claude ? CLAUDE_COLOR : "#888";
     return {
       id: edgeKey(d),
       source: String(d.blocker_id),
       target: String(d.blocked_id),
-      markerEnd: { type: MarkerType.ArrowClosed, color: cycle ? "#d73a4a" : "#888" },
-      style: cycle ? "stroke:#d73a4a;stroke-width:2" : "stroke:#888",
-      data: { cycle },
+      markerEnd: { type: MarkerType.ArrowClosed, color },
+      style: `stroke:${color}${cycle ? ";stroke-width:2" : ""}${claude ? ";stroke-dasharray:6 4" : ""}`,
+      data: { cycle, claude },
     };
   });
 
