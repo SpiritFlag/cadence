@@ -4,6 +4,8 @@
   import Milestones from "./Milestones.svelte";
 
   const p = $derived(store.proposal);
+  /** 붙일 카드가 없는 경고. 칸이 남는데 유지 패키지가 사라짐. */
+  const outside = $derived(p?.warnings.filter((w) => w.rank === null) ?? []);
   const forRank = (rank: number) => p?.warnings.filter((w) => w.rank === rank) ?? [];
   const num = (id: number) => `#${issueById(id)?.number ?? id}`;
   const approved = $derived(approvedChanges().length);
@@ -27,6 +29,9 @@
         <PackageCard {pkg} warnings={forRank(pkg.rank)} />
       {/each}
     {/if}
+    {#if outside.length > 0}
+      <ul class="outside">{#each outside as w, k (k)}<li>⚠ {w.message}</li>{/each}</ul>
+    {/if}
     {#if total > 0}
       <div class="apply">
         <button onclick={runApply} disabled={store.applying || store.busy || approved === 0}>
@@ -41,7 +46,7 @@
         {/if}
       </div>
     {/if}
-    <p class="meta">{p.created_at} · {p.cost_usd.toFixed(2)} USD</p>
+    <p class="meta">{p.created_at} · {p.cost_usd.toFixed(2)} USD{#if p.carried_from} · 제안 #{p.carried_from}에서 이어감{/if}</p>
   {/if}
 </div>
 
@@ -57,4 +62,5 @@
   .apply button { padding: 6px 10px; border: 1px solid #4a90e2; border-radius: 6px; background: transparent; color: #4a90e2; font: inherit; font-weight: 600; cursor: pointer; }
   .apply button:disabled { opacity: 0.5; cursor: default; }
   .summary { font-size: 12px; color: #888; }
+  .outside { margin: 0 0 8px; padding-left: 4px; list-style: none; font-size: 12px; color: #d73a4a; }
 </style>
