@@ -3,18 +3,20 @@
   import { SvelteFlow, Background, Controls, type Edge, type Connection } from "@xyflow/svelte";
   import "@xyflow/svelte/dist/style.css";
   import { store, select, addDep, issueById } from "../lib/store.svelte";
-  import { layoutGraph, type IssueFlowNode } from "../lib/layout";
+  import { layoutGraph, type GraphNode } from "../lib/layout";
   import IssueNode from "./IssueNode.svelte";
+  import PackageBoxNode from "./PackageBoxNode.svelte";
   import GraphBar from "./GraphBar.svelte";
 
-  const nodeTypes = { issue: IssueNode };
+  const nodeTypes = { issue: IssueNode, package: PackageBoxNode };
 
-  let nodes = $state.raw<IssueFlowNode[]>([]);
+  let nodes = $state.raw<GraphNode[]>([]);
   let edges = $state.raw<Edge[]>([]);
 
-  // 이슈 · 선이 바뀌면 다시 배치한다. 선택만 바뀌면 플래그만 바꿔 끌어놓은 위치를 지킨다.
+  // 이슈 · 선 · 제안이 바뀌면 다시 배치한다. 선택만 바뀌면 플래그만 바꿔 끌어놓은 위치를 지킨다.
   $effect(() => {
-    const laid = layoutGraph(store.issues, store.deps, null);
+    const packages = store.proposal?.status === "ok" ? store.proposal.packages : [];
+    const laid = layoutGraph(store.issues, store.deps, packages);
     nodes = laid.nodes;
     edges = laid.edges;
   });
@@ -23,6 +25,7 @@
     const current = untrack(() => nodes);
     let changed = false;
     const next = current.map((n) => {
+      if (n.type !== "issue") return n;
       const sel = n.id === id;
       if (n.selected === sel) return n;
       changed = true;
@@ -30,13 +33,14 @@
     });
     if (changed) nodes = next;
   });
-  // 강조도 플래그만. data.highlight / data.dim.
+  // 강조도 플래그만. data.highlight / data.dim. 박스는 흐리지 않는다.
   $effect(() => {
     const on = new Set(store.highlight.map(String));
     const active = on.size > 0;
     const current = untrack(() => nodes);
     let changed = false;
     const next = current.map((n) => {
+      if (n.type !== "issue") return n;
       const hi = on.has(n.id);
       const dim = active && !hi;
       if (n.data.highlight === hi && n.data.dim === dim) return n;
@@ -66,7 +70,7 @@
     colorMode="system"
     nodesDraggable={true}
     onconnect={onconnect}
-    onnodeclick={({ node }) => select(issueById(Number(node.id)) ?? null)}
+    onnodeclick={({ node }) => { if (node.type === "issue") select(issueById(Number(node.id)) ?? null); }}
     onpaneclick={() => select(null)}
   >
     <Background />
