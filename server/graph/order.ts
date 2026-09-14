@@ -100,13 +100,13 @@ export const PACKAGE_MAX = 5;
 export type PackageLike = { rank: number; issue_ids: number[] };
 
 export type PackageWarning = {
-  /** 어느 패키지에 붙는 경고인가. 패키지 밖 문제면 null. */
-  rank: number | null;
-  kind: "size" | "chain" | "missing" | "duplicate" | "unknown";
+  /** 어느 패키지에 붙는 경고인가. */
+  rank: number;
+  kind: "size" | "chain" | "duplicate" | "unknown";
   message: string;
 };
 
-/** 사슬 보존 · 이슈 누락 · 크기 상한을 검사한다. LLM 출력을 믿지 않는다. */
+/** 사슬 보존 · 크기 상한 · 중복 · 모르는 이슈를 검사한다. 패키지에 안 든 이슈는 대기라 경고하지 않는다. LLM 출력을 믿지 않는다. */
 export function checkPackages(packages: PackageLike[], issues: OrderIssue[], deps: Edge[]): PackageWarning[] {
   const warnings: PackageWarning[] = [];
   const expected = new Set(orderable(issues).map((i) => i.id));
@@ -130,13 +130,14 @@ export function checkPackages(packages: PackageLike[], issues: OrderIssue[], dep
       where.set(id, p.rank);
     }
   }
-  for (const id of expected) {
-    if (!where.has(id)) warnings.push({ rank: null, kind: "missing", message: `${num(id)}가 어느 패키지에도 없음` });
-  }
   for (const e of deps) {
     const a = where.get(e.blocker_id);
     const b = where.get(e.blocked_id);
-    if (a !== undefined && b !== undefined && a > b) {
+    if (b === undefined) continue;
+    // 막는 쪽이 순서에 드는데 어느 패키지에도 없으면 사슬이 끊긴 것이다. 닫힌 · hold 막는 쪽은 순서에 없다.
+    if (a === undefined && expected.has(e.blocker_id)) {
+      warnings.push({ rank: b, kind: "chain", message: `${num(e.blocked_id)}를 막는 ${num(e.blocker_id)}가 어느 패키지에도 없음` });
+    } else if (a !== undefined && a > b) {
       warnings.push({ rank: b, kind: "chain", message: `${num(e.blocked_id)}를 막는 ${num(e.blocker_id)}가 ${a}순위에 있음` });
     }
   }

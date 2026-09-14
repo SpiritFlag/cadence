@@ -54,7 +54,7 @@ test("승격된 우선순위로 순서를 매긴다", () => {
   expect(r.order).toEqual([1, 3, 4]);
 });
 
-test("패키지 검사: 크기 · 사슬 · 누락 · 중복 · 모르는 이슈", () => {
+test("패키지 검사: 크기 · 사슬 · 중복 · 모르는 이슈", () => {
   const issues = [is(1), is(2), is(3), is(4), is(5), is(6), is(7), is(8, ["hold"])];
   const deps = [e(1, 2)];
   const w = checkPackages(
@@ -70,9 +70,15 @@ test("패키지 검사: 크기 · 사슬 · 누락 · 중복 · 모르는 이슈
   expect(w.find((x) => x.kind === "size")?.rank).toBe(1);
 });
 
-test("패키지 검사: 빠진 이슈는 rank null", () => {
+test("패키지 검사: 패키지에 안 든 이슈는 대기라 경고가 없다", () => {
   const w = checkPackages([{ rank: 1, issue_ids: [1] }], [is(1), is(2), is(3, ["hold"])], []);
-  expect(w).toEqual([{ rank: null, kind: "missing", message: "#2가 어느 패키지에도 없음" }]);
+  expect(w).toEqual([]);
+});
+
+test("패키지 검사: 막는 이슈가 어느 패키지에도 없으면 사슬 경고. hold · 닫힌 막는 쪽은 빼고 본다", () => {
+  const issues = [is(1), is(2), is(3, ["hold"]), is(4, [], "closed"), is(5)];
+  const w = checkPackages([{ rank: 1, issue_ids: [2, 5] }], issues, [e(1, 2), e(3, 5), e(4, 5)]);
+  expect(w).toEqual([{ rank: 1, kind: "chain", message: "#2를 막는 #1가 어느 패키지에도 없음" }]);
 });
 
 test("패키지 검사: 제대로면 경고가 없다", () => {

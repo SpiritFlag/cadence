@@ -5,7 +5,7 @@ import { addRepo, listIssues, listRepos, syncRepo } from "../sync";
 import { addDep, listDeps } from "../deps";
 import type { GhIssue } from "../github/gh";
 import type { Proposer } from "../llm/claude";
-import { propose, latestProposal, buildPrompt } from "./index";
+import { propose, latestProposal, buildPrompt, PROPOSAL_SCHEMA } from "./index";
 import { candidateOrder } from "../graph/order";
 
 let db: Database;
@@ -31,6 +31,27 @@ test("프롬프트에 규칙 · 후보 순서 · 승격 · 선 · 이슈 본문�
   expect(p).toContain("1 → 2");
   expect(p).toContain("급하다");
   expect(p).not.toContain("#4"); // hold는 없다
+  expect(p).toContain("패키지는 5개까지다");
+  expect(PROPOSAL_SCHEMA.properties.packages.maxItems).toBe(5);
+});
+
+test("패키지가 5개를 넘으면 순위 앞 5개만 저장하고 로그에 남긴다", async () => {
+  const lines: string[] = [];
+  const many = [7, 6, 5, 4, 3, 2, 1].map((rank) => ({ rank, name: `p${rank}`, issue_ids: rank <= 3 ? [rank] : [], reason: "r", label_changes: [] }));
+  const r = await propose(db, 1, ...ctx(), async () => ({ output: { packages: many }, cost_usd: 0 }), (t) => lines.push(t));
+  if (!r.ok) throw new Error();
+  expect(r.proposal.packages.map((p) => p.name)).toEqual(["p1", "p2", "p3", "p4", "p5"]);
+  expect(lines).toContain("패키지 7개 · 앞 5개만 남긴다");
+});
+
+test("패키지에 안 든 이슈는 경고가 없고, 막는 이슈가 밖이면 사슬 경고다", async () => {
+  const only = (ids: number[]) => async () => ({ output: { packages: [{ rank: 1, name: "하나", issue_ids: ids, reason: "r", label_changes: [] }] }, cost_usd: 0 });
+  const waiting = await propose(db, 1, ...ctx(), only([3]));
+  if (!waiting.ok) throw new Error();
+  expect(waiting.proposal.warnings).toEqual([]);
+  const cut = await propose(db, 1, ...ctx(), only([2])); // 2를 막는 1이 밖
+  if (!cut.ok) throw new Error();
+  expect(cut.proposal.warnings).toEqual([{ rank: 1, kind: "chain", message: "#2를 막는 #1가 어느 패키지에도 없음" }]);
 });
 
 test("제안을 받아 검증하고 저장한다. 어기면 경고가 붙는다", async () => {

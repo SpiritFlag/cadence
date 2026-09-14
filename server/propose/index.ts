@@ -23,11 +23,15 @@ export type Proposal = {
   cost_usd: number;
 };
 
+/** 제안 하나의 패키지 수 상한. 넘친 이슈는 다음 제안까지 대기다. */
+export const PROPOSAL_MAX = 5;
+
 export const PROPOSAL_SCHEMA = {
   type: "object",
   properties: {
     packages: {
       type: "array",
+      maxItems: PROPOSAL_MAX,
       items: {
         type: "object",
         properties: {
@@ -59,13 +63,13 @@ export function buildPrompt(issues: Issue[], repos: Repo[], deps: Dep[], order: 
   const repoName = new Map(repos.map((r) => [r.id, `${r.owner}/${r.name}`]));
   const ids = new Set(orderable(issues).map((i) => i.id));
   const lines: string[] = [];
-  lines.push("너는 혼자 개발하는 사용자의 비서다. 열린 이슈를 같이 처리할 묶음(패키지)으로 나누고 순위를 매긴다.");
+  lines.push("너는 혼자 개발하는 사용자의 비서다. 열린 이슈 중 다음에 같이 처리할 묶음(패키지)을 골라 순위를 매긴다.");
   lines.push("");
   lines.push("## 규칙");
   lines.push("1. 막는 것이 앞이다. A가 B를 막으면 A는 B와 같은 패키지거나 앞 패키지에 있어야 한다. 사슬을 끊지 않는다.");
   lines.push("2. 의미가 통하는 것끼리 묶는다. 같은 화면 · 같은 층 · 같은 목적이면 한 패키지다.");
   lines.push(`3. 패키지 하나는 이슈 ${PACKAGE_MAX}개 이하다. 사슬이 길면 앞부분만 자르고 나머지는 다음 패키지다.`);
-  lines.push("4. 순서에 드는 이슈는 전부 어느 한 패키지에 정확히 한 번 들어간다. hold 이슈는 넣지 않는다.");
+  lines.push(`4. 패키지는 ${PROPOSAL_MAX}개까지다. 급한 것부터 채우고 나머지 이슈는 넣지 않는다. 한 이슈는 많아야 한 패키지에 한 번. hold 이슈는 넣지 않는다.`);
   lines.push("5. 급한 것이 앞이다. 본문에 왜 급한지 적혀 있으면 그것을 믿는다. p1 라벨은 강한 힌트다.");
   lines.push("6. 라벨 변경 제안은 올리는 것만이다. 후보 순서의 승격 제안은 그대로 포함하고, 본문을 보고 급하다고 판단한 것만 더한다. 내리는 제안은 없다.");
   lines.push("7. 이름은 한국어 짧은 명사구. 이유는 \"-다\" 체 한 문장. 사용자를 부르지 않는다.");
@@ -163,6 +167,10 @@ export async function propose(
       cost += r.cost_usd;
       packages = parsePackages(r.output);
       if (packages === null) log(`출력이 패키지 모양이 아니다 · ${next}`);
+      else if (packages.length > PROPOSAL_MAX) {
+        log(`패키지 ${packages.length}개 · 앞 ${PROPOSAL_MAX}개만 남긴다`);
+        packages = packages.slice(0, PROPOSAL_MAX);
+      }
     } catch (e) {
       log(`claude 실패 · ${(e as Error).message} · ${next}`);
     }
