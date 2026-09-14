@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { store, addRepo, refresh, runPropose, cycleCount } from "../lib/store.svelte";
+  import { store, addRepo, refresh, runPropose, cycleCount, selectRepo } from "../lib/store.svelte";
 
   const cycles = $derived(cycleCount());
 
@@ -18,7 +18,13 @@
   <strong class="brand">cadence</strong>
   <div class="repos">
     {#each store.repos as r (r.id)}
-      <span class="chip">{r.owner}/{r.name}</span>
+      <button
+        class="chip"
+        class:on={r.id === store.repoId}
+        onclick={() => selectRepo(r.id)}
+        disabled={store.busy || store.proposing}
+        title="이 레포만 본다"
+      >{r.owner}/{r.name}</button>
     {/each}
     <form onsubmit={submit}>
       <input placeholder="owner/name" bind:value={full} disabled={store.busy} />
@@ -42,6 +48,7 @@
   .brand { font-size: 16px; }
   .repos { display: flex; align-items: center; gap: 8px; flex: 1; }
   .chip { padding: 2px 10px; border: 1px solid #8886; border-radius: 12px; font-size: 12px; }
+  .chip.on { border-color: #4a90e2; color: #4a90e2; font-weight: 600; background: #4a90e21a; }
   form { display: flex; gap: 4px; }
   input { width: 180px; padding: 3px 8px; border: 1px solid #8886; border-radius: 6px; font: inherit; background: transparent; color: inherit; }
   button { padding: 3px 10px; border: 1px solid #8886; border-radius: 6px; font: inherit; background: transparent; color: inherit; cursor: pointer; }

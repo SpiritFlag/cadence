@@ -7,6 +7,8 @@ import { api } from "./api";
 
 export const store = $state({
   repos: [] as Repo[],
+  /** 고른 레포. 그래프 · 상세 · 패키지가 이 레포 것만 본다. */
+  repoId: null as number | null,
   issues: [] as Issue[],
   deps: [] as Dep[],
   selected: null as Issue | null,
@@ -34,9 +36,49 @@ async function run(work: () => Promise<void>) {
   }
 }
 
+// 고른 레포는 이 브라우저에만 둔다. 저장소가 막혀 있으면 첫 레포로 시작한다.
+const REPO_KEY = "cadence.repo";
+
+function savedRepo(): number | null {
+  try {
+    const v = localStorage.getItem(REPO_KEY);
+    return v === null ? null : Number(v);
+  } catch {
+    return null;
+  }
+}
+
+function saveRepo(id: number | null) {
+  try {
+    if (id === null) localStorage.removeItem(REPO_KEY);
+    else localStorage.setItem(REPO_KEY, String(id));
+  } catch {
+    // 저장 못 해도 이번 세션은 그대로 쓴다.
+  }
+}
+
 async function reload() {
-  [store.repos, store.issues, store.deps, store.proposal] = await Promise.all([api.repos(), api.issues(), api.deps(), api.latestProposal()]);
+  store.repos = await api.repos();
+  const want = store.repoId ?? savedRepo();
+  store.repoId = store.repos.find((r) => r.id === want)?.id ?? store.repos[0]?.id ?? null;
+  saveRepo(store.repoId);
+  if (store.repoId === null) {
+    [store.issues, store.deps, store.proposal] = [[], [], null];
+  } else {
+    const repo = store.repoId;
+    [store.issues, store.deps, store.proposal] = await Promise.all([api.issues(repo), api.deps(repo), api.latestProposal(repo)]);
+  }
   if (store.selected) store.selected = store.issues.find((i) => i.id === store.selected!.id) ?? null;
+}
+
+/** 레포를 바꾸면 그 레포에 딸린 선택 · 강조 · 승인 상태를 버린다. */
+function switchRepo(id: number) {
+  store.repoId = id;
+  saveRepo(id);
+  store.selected = null;
+  store.highlight = [];
+  store.rejected = {};
+  store.applyResult = null;
 }
 
 /** 서버에 있는 것을 그대로 읽는다. 동기화는 안 한다. */
@@ -44,13 +86,21 @@ export function load() {
   return run(reload);
 }
 
-/** 레포를 등록하고 바로 동기화한다. */
+/** 레포를 등록하고 바로 동기화한 뒤 그 레포로 넘어간다. */
 export function addRepo(full: string) {
   return run(async () => {
-    await api.addRepo(full);
+    const repo = await api.addRepo(full);
     await api.sync();
+    switchRepo(repo.id);
     await reload();
   });
+}
+
+/** 헤더 레포 칩. */
+export function selectRepo(id: number) {
+  if (id === store.repoId) return;
+  switchRepo(id);
+  return run(reload);
 }
 
 /** 새로고침: 동기화 뒤 다시 읽는다. */
@@ -69,14 +119,14 @@ export function select(issue: Issue | null) {
 export function addDep(blocker_id: number, blocked_id: number) {
   return run(async () => {
     await api.addDep(blocker_id, blocked_id);
-    store.deps = await api.deps();
+    if (store.repoId !== null) store.deps = await api.deps(store.repoId);
   });
 }
 
 export function removeDep(blocker_id: number, blocked_id: number) {
   return run(async () => {
     await api.removeDep(blocker_id, blocked_id);
-    store.deps = await api.deps();
+    if (store.repoId !== null) store.deps = await api.deps(store.repoId);
   });
 }
 
@@ -105,12 +155,16 @@ export function cycleCount(): number {
   return cycleEdges(store.deps.filter((d) => ids.has(d.blocker_id) && ids.has(d.blocked_id))).length;
 }
 
-/** [제안]. claude가 돌아 몇 초 걸린다. */
+/** [제안]. 고른 레포로 claude가 돌아 몇 초 걸린다. */
 export async function runPropose() {
+  if (store.repoId === null) return;
+  const repo = store.repoId;
   store.proposing = true;
   store.error = null;
   try {
-    store.proposal = await api.propose();
+    const proposal = await api.propose(repo);
+    if (store.repoId !== repo) return; // 도는 사이 레포를 바꿨으면 그 레포 화면을 덮지 않는다
+    store.proposal = proposal;
     store.rejected = {};
     store.applyResult = null;
   } catch (e) {
